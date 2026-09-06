@@ -13,10 +13,98 @@ use tracing::{info, warn};
 
 use crate::db::{self, Db};
 use crate::harness;
+use crate::knowledge::{self, DocOutcome, SessionInfo};
 use crate::paths;
 use crate::proto::{AgentInfo, ClientMsg, DaemonMsg, SpawnReq};
 use crate::status::detect_status;
 use agent::Agent;
+
+/// Everything the documentation thread needs, owned (the agent may be gone by the time it runs).
+pub struct DocJob {
+    pub name: String,
+    pub harness: String,
+    pub cwd: PathBuf,
+    pub task: Option<String>,
+    pub started_at: i64,
+    pub ended_at: i64,
+    pub session_id: Option<String>,
+    pub raw_log: PathBuf,
+    pub scrollback: String,
+}
+
+impl DocJob {
+    fn from_agent(a: &Agent) -> DocJob {
+        DocJob {
+            name: a.name.clone(),
+            harness: a.harness.clone(),
+            cwd: a.cwd.clone(),
+            task: a.task.clone(),
+            started_at: a.created_at,
+            ended_at: db::now_ms(),
+            session_id: a.launch.session_id.clone(),
+            raw_log: paths::agent_dir(&a.name).join("raw.log"),
+            scrollback: a.history_text(),
+        }
+    }
+}
+
+fn documentable(a: &Agent) -> bool {
+    a.harness != "cmd" && knowledge::pick_summarizer().is_some() && crate::config::load().document_sessions
+}
+
+/// Run documentation off the runtime. When `shared` is given the agent still exists and gets a
+/// banner + status update; otherwise the outcome is reported on the bus only.
+fn document_in_background(job: DocJob, shared: Option<Shared>) {
+    std::thread::Builder::new()
+        .name(format!("doc-{}", job.name))
+        .spawn(move || {
+            let mut notes: Vec<String> = Vec::new();
+            let outcome = {
+                let info = SessionInfo {
+                    name: &job.name,
+                    harness: &job.harness,
+                    cwd: &job.cwd,
+                    task: job.task.as_deref(),
+                    started_at: job.started_at,
+                    ended_at: job.ended_at,
+                    session_id: job.session_id.as_deref(),
+                    raw_log: Some(&job.raw_log),
+                    scrollback: Some(&job.scrollback),
+                };
+                knowledge::document_session(&info, &mut |m| notes.push(m.to_string()))
+            };
+            let summary = match &outcome {
+                Ok(DocOutcome::Written { note, knowledge: k, summarizer, .. }) => {
+                    format!("documented session of {} with {summarizer}: {}{}", job.name, note.display(), k.as_ref().map(|k| format!(" · knowledge: {}", k.display())).unwrap_or_default())
+                }
+                Ok(DocOutcome::Skipped(r)) => format!("session of {} not documented: {r}", job.name),
+                Err(e) => format!("documentation of {} failed: {e}", job.name),
+            };
+            info!("{summary}");
+            if let Ok(db) = Db::open() {
+                if !matches!(outcome, Ok(DocOutcome::Skipped(_))) {
+                    let _ = db.add_message("qoral", "human", &summary);
+                }
+                if shared.is_none() {
+                    return;
+                }
+            }
+            if let Some(shared) = shared {
+                let mut s = shared.lock().unwrap();
+                if let Some(a) = s.agents.get_mut(&job.name) {
+                    for n in &notes {
+                        a.banner(&format!("[qoral] {n}"));
+                    }
+                    a.banner(&format!("[qoral] {summary}"));
+                    a.banner(&format!("[qoral] agent \"{}\" exited. Press x in the sidebar to remove it.", job.name));
+                    a.status = "exited".into();
+                }
+                let _ = s.db.mark_exited(&job.name);
+                s.publish_agents(true);
+            }
+        })
+        .ok();
+}
 
 const IDLE_GRACE: Duration = Duration::from_millis(1500);
 const MAX_NUDGE_CHARS: usize = 1800;
@@ -99,7 +187,8 @@ impl State {
     }
 
     pub fn spawn_agent(&mut self, req: &SpawnReq, size: Option<(u16, u16)>) -> Result<(String, Vec<String>)> {
-        if !paths::HARNESSES.contains(&req.harness.as_str()) {
+        let is_cmd = req.command.is_some();
+        if !is_cmd && !paths::HARNESSES.contains(&req.harness.as_str()) {
             bail!("unknown harness \"{}\" ({})", req.harness, paths::HARNESSES.join(" | "));
         }
         let taken: Vec<String> = self.agents.keys().cloned().collect();
@@ -130,10 +219,20 @@ impl State {
         let _ = self.db.delete_agent(&name);
 
         let (cols, rows) = size.unwrap_or((DEFAULT_COLS, DEFAULT_ROWS));
-        let agent = Agent::spawn(&name, &req.harness, &cwd, req.prompt.as_deref(), cols, rows, self.bytes_tx.clone())?;
+        let harness_name = if is_cmd { "cmd".to_string() } else { req.harness.clone() };
+        let launch = match &req.command {
+            Some(argv) if !argv.is_empty() => harness::command_launch(argv.clone()),
+            Some(_) => bail!("empty command"),
+            None => harness::build_launch(&req.harness, &name, &cwd, req.prompt.as_deref())?,
+        };
+        let raw_log = if is_cmd { None } else { Some(paths::agent_dir(&name).join("raw.log")) };
+        let mut agent = Agent::spawn(&name, &harness_name, &cwd, req.prompt.as_deref(), launch, cols, rows, self.bytes_tx.clone(), raw_log)?;
+        if is_cmd {
+            agent.status = "shell".into();
+        }
         let notices = agent.launch.notices.clone();
         let pid = agent.pid().map(|p| format!("pty:{p}"));
-        self.db.insert_agent(&name, &req.harness, &cwd.display().to_string(), pid.as_deref(), agent.task.as_deref())?;
+        self.db.insert_agent(&name, &harness_name, &cwd.display().to_string(), pid.as_deref(), agent.task.as_deref())?;
         // persist launch spec for documentation / debugging
         let _ = std::fs::write(
             paths::agent_dir(&name).join("launch.json"),
@@ -143,21 +242,26 @@ impl State {
             }))
             .unwrap_or_default(),
         );
-        info!(agent = %name, harness = %req.harness, "spawned");
+        info!(agent = %name, harness = %harness_name, "spawned");
         self.agents.insert(name.clone(), agent);
         self.publish_agents(true);
         Ok((name, notices))
     }
 
-    pub fn kill_agent(&mut self, name: &str) -> Result<()> {
+    pub fn kill_agent(&mut self, name: &str, document: bool) -> Result<bool> {
         let Some(mut a) = self.agents.remove(name) else {
             if self.db.get_agent(name)?.is_some() {
                 self.db.delete_agent(name)?;
                 self.publish_agents(true);
-                return Ok(());
+                return Ok(false);
             }
             bail!("no agent named \"{name}\"");
         };
+        let mut documenting = false;
+        if document && a.exited_at.is_none() && documentable(&a) {
+            document_in_background(DocJob::from_agent(&a), None);
+            documenting = true;
+        }
         a.kill();
         self.db.delete_agent(name)?;
         for c in self.clients.values_mut() {
@@ -167,26 +271,53 @@ impl State {
             }
         }
         self.idle_since.remove(name);
-        info!(agent = %name, "killed");
+        info!(agent = %name, documenting, "killed");
         self.publish_agents(true);
+        Ok(documenting)
+    }
+
+    /// Snapshot a running agent into a session note (it keeps running).
+    pub fn document_agent(&self, name: &str) -> Result<()> {
+        let Some(a) = self.agents.get(name) else { bail!("no agent named \"{name}\"") };
+        if a.harness == "cmd" {
+            bail!("\"{name}\" is a command window, nothing to document");
+        }
+        if knowledge::pick_summarizer().is_none() {
+            bail!("no summarizer CLI available (claude/codex/gemini/agy) or summarizer=none");
+        }
+        document_in_background(DocJob::from_agent(a), None);
         Ok(())
     }
 
     /// Periodic housekeeping: exits, status, nudges.
-    fn tick(&mut self) {
+    fn tick(&mut self, shared: &Shared) {
         let now = Instant::now();
         let names: Vec<String> = self.agents.keys().cloned().collect();
         for name in names {
             let Some(a) = self.agents.get_mut(&name) else { continue };
+            if a.status == "documenting" {
+                continue; // the doc thread will flip it to exited
+            }
             if a.exited_at.is_none() {
                 if let Some(code) = a.poll_exit() {
-                    a.banner(&format!("[qoral] agent \"{name}\" exited ({code}). Press x in the sidebar to remove it."));
-                    let _ = self.db.mark_exited(&name);
+                    a.banner(&format!("[qoral] agent \"{name}\" exited ({code})."));
                     self.idle_since.remove(&name);
+                    if documentable(a) {
+                        a.status = "documenting".into();
+                        a.banner(&format!("[qoral] documenting session… (writes .qoral/notes and .qoral/KNOWLEDGE.md in {})", a.cwd.display()));
+                        let _ = self.db.set_status(&name, "documenting");
+                        document_in_background(DocJob::from_agent(a), Some(shared.clone()));
+                    } else {
+                        a.banner("[qoral] Press x in the sidebar to remove it.");
+                        let _ = self.db.mark_exited(&name);
+                    }
                     continue;
                 }
             } else {
                 continue;
+            }
+            if a.harness == "cmd" {
+                continue; // editor / debate windows: no status heuristics, no nudges
             }
             let status = detect_status(&a.screen_text()).to_string();
             if status != a.status {
@@ -376,7 +507,15 @@ fn handle_msg(msg: ClientMsg, id: u64, state: &Shared, tx: &mpsc::UnboundedSende
                     }
                 }
             }
-            ClientMsg::Kill { name } => match s.kill_agent(&name) {
+            ClientMsg::Kill { name } => match s.kill_agent(&name, true) {
+                Ok(_) => {
+                    let _ = tx.send(DaemonMsg::Ok);
+                }
+                Err(e) => {
+                    let _ = tx.send(DaemonMsg::Error { message: e.to_string() });
+                }
+            },
+            ClientMsg::Document { name } => match s.document_agent(&name) {
                 Ok(()) => {
                     let _ = tx.send(DaemonMsg::Ok);
                 }
@@ -473,7 +612,7 @@ pub async fn run() -> Result<()> {
                 iv.tick().await;
                 let shutting_down = {
                     let mut s = state.lock().unwrap();
-                    s.tick();
+                    s.tick(&state);
                     s.shutting_down
                 };
                 if shutting_down {

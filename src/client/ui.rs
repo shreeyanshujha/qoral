@@ -7,52 +7,10 @@ use ratatui::Frame as RFrame;
 
 use super::{App, Focus, Mode, SIDEBAR_W};
 use crate::proto::{attr, Color as PColor, Frame};
+use crate::theme::{harness_color as theme_harness_color, Glyphs, Palette};
 
-pub const SPIN: [&str; 4] = ["◐", "◓", "◑", "◒"];
-
-pub struct Palette {
-    pub accent: Color,
-    pub idle: Color,
-    pub working: Color,
-    pub attention: Color,
-    pub documenting: Color,
-    pub exited: Color,
-    pub text: Color,
-    pub dim: Color,
-    pub border: Color,
-    pub mail: Color,
-    pub bar_bg: Color,
-    pub bar_fg: Color,
-    pub bar_key: Color,
-}
-
-pub fn palette() -> Palette {
-    Palette {
-        accent: Color::Indexed(214),
-        idle: Color::Green,
-        working: Color::Yellow,
-        attention: Color::Red,
-        documenting: Color::Cyan,
-        exited: Color::DarkGray,
-        text: Color::White,
-        dim: Color::DarkGray,
-        border: Color::Indexed(238),
-        mail: Color::Magenta,
-        bar_bg: Color::Indexed(236),
-        bar_fg: Color::Indexed(250),
-        bar_key: Color::Indexed(245),
-    }
-}
-
-pub fn harness_color(h: &str, p: &Palette) -> Color {
-    match h {
-        "claude" => p.accent,
-        "codex" => Color::Green,
-        "agy" => Color::Magenta,
-        "gemini" => Color::Blue,
-        "moderator" => Color::Cyan,
-        _ => p.text,
-    }
+fn harness_color(h: &str, p: &Palette) -> Color {
+    theme_harness_color(p, h)
 }
 
 fn pcolor(c: &PColor) -> Color {
@@ -69,7 +27,7 @@ pub fn draw(f: &mut RFrame, app: &mut App) {
     let cols = Layout::horizontal([Constraint::Length(SIDEBAR_W), Constraint::Length(1), Constraint::Min(1)]).split(rows[0]);
     app.sidebar_area = cols[0];
     app.main_area = cols[2];
-    let p = palette();
+    let p = app.theme.palette.clone();
 
     match app.mode {
         Mode::Log => draw_log(f, app, cols[0], &p),
@@ -118,7 +76,7 @@ fn draw_sidebar(f: &mut RFrame, app: &mut App, area: Rect, p: &Palette) {
         header.push(Span::styled(" ◂", Style::default().fg(p.accent)));
     }
     if app.human_unread > 0 {
-        let badge = format!("✉ {}", app.human_unread);
+        let badge = format!("{} {}", app.theme.glyphs.mail, app.human_unread);
         let pad = w.saturating_sub(7 + badge.len() + 2);
         header.push(Span::raw(" ".repeat(pad)));
         header.push(Span::styled(badge, Style::default().fg(p.mail).add_modifier(Modifier::BOLD)));
@@ -138,13 +96,13 @@ fn draw_sidebar(f: &mut RFrame, app: &mut App, area: Rect, p: &Palette) {
     for (i, a) in app.agents.iter().enumerate().skip(start).take(list_h) {
         let selected = i == app.sel;
         let shown = app.shown.as_deref() == Some(a.name.as_str());
-        let (icon, icon_color) = status_icon(&a.status, app.spin, p);
-        let cursor = if selected { "▸" } else { " " };
+        let (icon, icon_color) = status_icon(&a.status, app.spin, p, &app.theme.glyphs);
+        let cursor = if selected { app.theme.glyphs.cursor.as_str() } else { " " };
         let num = if i < 9 { format!("{}", i + 1) } else { " ".into() };
         let name_w = w.saturating_sub(18).max(6);
         let name = format!("{:<name_w$}", truncate(&a.name, name_w));
-        let tag = if a.exited_at.is_some() { "exited".to_string() } else if a.harness == "moderator" { "debate".to_string() } else { a.harness.clone() };
-        let mail = if a.pending > 0 { format!(" ↓{}", a.pending) } else { String::new() };
+        let tag = if a.exited_at.is_some() { "exited".to_string() } else if a.harness == "moderator" { "debate".to_string() } else if a.harness == "cmd" { "window".to_string() } else { a.harness.clone() };
+        let mail = if a.pending > 0 { format!(" {}{}", app.theme.glyphs.unread, a.pending) } else { String::new() };
         let name_style = if a.exited_at.is_some() {
             Style::default().fg(p.exited)
         } else if shown {
@@ -263,15 +221,16 @@ fn draw_sidebar(f: &mut RFrame, app: &mut App, area: Rect, p: &Palette) {
     f.render_widget(Paragraph::new(lines), area);
 }
 
-pub fn status_icon(status: &str, spin: usize, p: &Palette) -> (String, Color) {
+pub fn status_icon(status: &str, spin: usize, p: &Palette, g: &Glyphs) -> (String, Color) {
     match status {
-        "idle" => ("●".into(), p.idle),
-        "working" => (SPIN[spin % SPIN.len()].into(), p.working),
-        "attention" => ("!".into(), p.attention),
-        "documenting" => ("✎".into(), p.documenting),
-        "moderating" => ("⚖".into(), p.documenting),
-        "exited" => ("○".into(), p.exited),
-        _ => ("◌".into(), p.exited),
+        "idle" => (g.idle.clone(), p.idle),
+        "working" => (g.working[spin % g.working.len()].clone(), p.working),
+        "attention" => (g.attention.clone(), p.attention),
+        "documenting" => (g.documenting.clone(), p.documenting),
+        "moderating" => (g.moderating.clone(), p.moderating),
+        "exited" => (g.exited.clone(), p.exited),
+        "shell" => (g.idle.clone(), p.dim),
+        _ => (g.starting.clone(), p.starting),
     }
 }
 
@@ -351,6 +310,8 @@ fn draw_help(f: &mut RFrame, _app: &mut App, area: Rect, p: &Palette) {
         k("b", "broadcast to all agents"),
         k("x", "kill selected agent"),
         k("l", "message log"),
+        k("D", "debate a question with 3 agents"),
+        k("o", "open the project's .qoral/KNOWLEDGE.md"),
         k("d", "detach (agents keep running)"),
         k("Q", "quit: kill every agent"),
         Line::raw(""),
@@ -367,9 +328,10 @@ fn draw_help(f: &mut RFrame, _app: &mut App, area: Rect, p: &Palette) {
         k("mouse", "wheel scrolls history unless the app wants the mouse"),
         Line::raw(""),
         sec("status"),
-        Line::from(vec![Span::styled(" ●", Style::default().fg(p.idle)), Span::styled(" idle at prompt   ", dim), Span::styled("◐", Style::default().fg(p.working)), Span::styled(" working", dim)]),
-        Line::from(vec![Span::styled(" !", Style::default().fg(p.attention)), Span::styled(" needs you (permission/login)", dim)]),
-        Line::from(vec![Span::styled(" ○", Style::default().fg(p.exited)), Span::styled(" exited (x removes it)", dim)]),
+        Line::from(vec![Span::styled(format!(" {}", _app.theme.glyphs.idle), Style::default().fg(p.idle)), Span::styled(" idle at prompt   ", dim), Span::styled(_app.theme.glyphs.working[0].clone(), Style::default().fg(p.working)), Span::styled(" working", dim)]),
+        Line::from(vec![Span::styled(format!(" {}", _app.theme.glyphs.attention), Style::default().fg(p.attention)), Span::styled(" needs you (permission/login)", dim)]),
+        Line::from(vec![Span::styled(format!(" {}", _app.theme.glyphs.documenting), Style::default().fg(p.documenting)), Span::styled(" documenting session on exit", dim)]),
+        Line::from(vec![Span::styled(format!(" {}", _app.theme.glyphs.exited), Style::default().fg(p.exited)), Span::styled(" exited (x removes it)", dim)]),
         Line::raw(""),
         Line::styled(" ? or Esc to go back", dim),
     ];

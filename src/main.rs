@@ -3,11 +3,15 @@ mod config;
 mod ctl;
 mod daemon;
 mod db;
+mod debate;
+mod doctor;
 mod harness;
+mod knowledge;
 mod mcp;
 mod paths;
 mod proto;
 mod status;
+mod theme;
 
 use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
@@ -66,9 +70,19 @@ enum Cmd {
     },
     /// Show an agent in attached clients
     Focus { name: String },
-    /// Stop an agent
+    /// Type a line into an agent's terminal (text, then Enter), for scripts and tests
+    Type {
+        name: String,
+        #[arg(trailing_var_arg = true)]
+        text: Vec<String>,
+    },
+    /// Stop an agent (its session gets documented unless --no-docs)
     #[command(alias = "rm")]
-    Kill { name: String },
+    Kill {
+        name: String,
+        #[arg(long)]
+        no_docs: bool,
+    },
     /// Stop the daemon and every agent
     #[command(alias = "quit")]
     Stop,
@@ -76,6 +90,51 @@ enum Cmd {
     Mcp {
         #[arg(long)]
         agent: Option<String>,
+    },
+    /// Show a project's knowledge digest and session notes
+    #[command(alias = "knowledge", alias = "docs")]
+    Notes {
+        dir: Option<String>,
+        #[arg(short = 'n', default_value_t = 20)]
+        n: usize,
+    },
+    /// Write a session note for a running agent now (it keeps running)
+    #[command(alias = "doc")]
+    Document { name: String },
+    /// Check terminal, agent CLIs, daemon, data and print platform tips
+    Doctor,
+    /// List/preview themes, or scaffold a custom one: theme init <name> [--from nord]
+    #[command(alias = "themes")]
+    Theme {
+        #[arg(default_value = "list")]
+        action: String,
+        name: Option<String>,
+        #[arg(long)]
+        from: Option<String>,
+        #[arg(long)]
+        force: bool,
+    },
+    /// Several agents argue a question, then a decision document is written
+    Debate {
+        /// The question to debate
+        #[arg(trailing_var_arg = true)]
+        question: Vec<String>,
+        #[arg(long)]
+        dir: Option<String>,
+        /// Comma-separated harnesses for the participants (2-4), e.g. claude,agy,codex
+        #[arg(long)]
+        agents: Option<String>,
+        #[arg(long, default_value_t = 3)]
+        rounds: usize,
+        /// Seconds to wait per round
+        #[arg(long, default_value_t = 300)]
+        timeout: u64,
+        /// Spawn a builder afterwards to implement the decision
+        #[arg(long)]
+        build: bool,
+        /// Leave participants running afterwards
+        #[arg(long)]
+        keep: bool,
     },
 }
 
@@ -110,7 +169,7 @@ async fn async_main(cli: Cli) -> Result<()> {
         Some(Cmd::Spawn { harness, name, dir, no_focus, task }) => {
             let prompt = task.join(" ").trim().to_string();
             let cwd = dir.unwrap_or_else(|| std::env::current_dir().map(|p| p.display().to_string()).unwrap_or_default());
-            let req = SpawnReq { harness, name, cwd: Some(cwd), prompt: if prompt.is_empty() { None } else { Some(prompt) }, focus: !no_focus };
+            let req = SpawnReq { harness, name, cwd: Some(cwd), prompt: if prompt.is_empty() { None } else { Some(prompt) }, focus: !no_focus, command: None };
             match ctl::request(ClientMsg::Spawn(req), true).await? {
                 DaemonMsg::Spawned { name, notices } => {
                     let db = db::Db::open()?;
@@ -176,14 +235,27 @@ async fn async_main(cli: Cli) -> Result<()> {
             }
             Ok(())
         }
+        Some(Cmd::Type { name, text }) => {
+            let line = text.join(" ");
+            let mut stream = match ctl::try_connect().await {
+                Some(s) => s,
+                None => bail!("qoral daemon is not running"),
+            };
+            proto::write_msg(&mut stream, &ClientMsg::Hello { client: "cli".into() }).await?;
+            proto::write_msg(&mut stream, &ClientMsg::Input { agent: name.clone(), data: line.into_bytes() }).await?;
+            tokio::time::sleep(std::time::Duration::from_millis(350)).await;
+            proto::write_msg(&mut stream, &ClientMsg::Input { agent: name, data: b"\r".to_vec() }).await?;
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            Ok(())
+        }
         Some(Cmd::Focus { name }) => match ctl::request(ClientMsg::Focus { name }, false).await? {
             DaemonMsg::Ok => Ok(()),
             DaemonMsg::Error { message } => bail!("{message}"),
             other => bail!("unexpected reply: {other:?}"),
         },
-        Some(Cmd::Kill { name }) => match ctl::request(ClientMsg::Kill { name: name.clone() }, false).await {
+        Some(Cmd::Kill { name, no_docs }) => match ctl::request(ClientMsg::Kill { name: name.clone() }, false).await {
             Ok(DaemonMsg::Ok) => {
-                println!("killed {name}");
+                println!("killed {name}{}", if no_docs { "" } else { " (documenting its session in the background if it ran long enough)" });
                 Ok(())
             }
             Ok(DaemonMsg::Error { message }) => bail!("{message}"),
@@ -205,6 +277,73 @@ async fn async_main(cli: Cli) -> Result<()> {
                 Ok(())
             }
         },
+        Some(Cmd::Notes { dir, n }) => {
+            let cwd = dir.map(|d| paths::expand_home(&d)).unwrap_or(std::env::current_dir()?);
+            let know = knowledge::read_knowledge(&cwd);
+            if know.trim().is_empty() {
+                println!("no knowledge recorded yet in {}/.qoral/", cwd.display());
+            } else {
+                println!("{}", know.trim());
+            }
+            let notes = knowledge::list_notes(&cwd, n);
+            if !notes.is_empty() {
+                println!("\nsession notes:");
+                for (f, t) in notes {
+                    println!("  {f}  {t}");
+                }
+            }
+            let decisions = cwd.join(".qoral/decisions");
+            if let Ok(rd) = std::fs::read_dir(&decisions) {
+                let mut ds: Vec<String> = rd.flatten().map(|e| e.file_name().to_string_lossy().to_string()).filter(|f| f.ends_with(".md")).collect();
+                ds.sort();
+                if !ds.is_empty() {
+                    println!("\ndecisions:");
+                    for d in ds {
+                        println!("  .qoral/decisions/{d}");
+                    }
+                }
+            }
+            Ok(())
+        }
+        Some(Cmd::Document { name }) => match ctl::request(ClientMsg::Document { name: name.clone() }, false).await? {
+            DaemonMsg::Ok => {
+                println!("documenting {name} in the background; the note lands in its project's .qoral/notes and a summary arrives on the bus (qoral log)");
+                Ok(())
+            }
+            DaemonMsg::Error { message } => bail!("{message}"),
+            other => bail!("unexpected reply: {other:?}"),
+        },
+        Some(Cmd::Doctor) => {
+            let problems = doctor::run().await;
+            std::process::exit(if problems > 0 { 1 } else { 0 });
+        }
+        Some(Cmd::Theme { action, name, from, force }) => match action.as_str() {
+            "list" | "show" => {
+                println!("{}", theme::describe());
+                println!("\nset one with:  \"theme\": \"<name>\" in {}/config.json  (or QORAL_THEME=<name> qoral)", paths::home().display());
+                Ok(())
+            }
+            "init" | "new" => {
+                let file = theme::init_theme(name.as_deref().unwrap_or("custom"), from.as_deref(), force)?;
+                let stem = file.file_stem().unwrap().to_string_lossy();
+                println!("wrote {}\nedit it, then set \"theme\": \"{stem}\" in {}/config.json (or run: QORAL_THEME={stem} qoral)", file.display(), paths::home().display());
+                Ok(())
+            }
+            other => bail!("unknown theme action \"{other}\" (list | init <name> [--from <builtin>] [--force])"),
+        },
+        Some(Cmd::Debate { question, dir, agents, rounds, timeout, build, keep }) => {
+            let q = question.join(" ");
+            let opts = debate::DebateOpts {
+                question: q,
+                cwd: dir.map(|d| paths::expand_home(&d)).unwrap_or(std::env::current_dir()?),
+                harnesses: agents.map(|a| a.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()).unwrap_or_default(),
+                rounds: rounds.max(1),
+                timeout: std::time::Duration::from_secs(timeout.max(10)),
+                build,
+                keep,
+            };
+            debate::run(opts, &|m| println!("{m}")).await
+        }
         Some(Cmd::Mcp { .. }) => unreachable!(),
     }
 }

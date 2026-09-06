@@ -13,7 +13,9 @@ use tokio::sync::mpsc;
 
 use crate::ctl;
 use crate::db::{self, Db, Message};
+use crate::harness::{self_exe, shq};
 use crate::proto::{read_msg, write_msg, AgentInfo, ClientMsg, DaemonMsg, Frame, SpawnReq};
+use crate::theme::{self, Theme};
 
 pub const SIDEBAR_W: u16 = 38;
 
@@ -33,6 +35,9 @@ pub enum Pending {
     Broadcast,
     Kill { name: String },
     QuitAll,
+    DebateQuestion,
+    DebateDir { question: String },
+    DebateBuild { question: String, dir: String },
 }
 
 pub enum Mode {
@@ -61,6 +66,7 @@ pub struct App {
     pub log_scroll: usize,
     pub last_dir: PathBuf,
     pub quit: bool,
+    pub theme: Theme,
     tx: mpsc::UnboundedSender<ClientMsg>,
     sent_size: (u16, u16),
     db: Db,
@@ -140,11 +146,47 @@ impl App {
     }
     fn start_kill(&mut self) {
         let Some(a) = self.selected().cloned() else { return };
-        if a.exited_at.is_some() {
+        if a.exited_at.is_some() || a.harness == "cmd" {
             self.send(ClientMsg::Kill { name: a.name });
             return;
         }
         self.mode = Mode::Confirm { text: format!("kill {}? (y/N)", a.name), pending: Pending::Kill { name: a.name } };
+    }
+
+    fn project_dir(&self) -> PathBuf {
+        match self.selected() {
+            Some(a) if a.harness != "moderator" => PathBuf::from(&a.cwd),
+            _ => self.last_dir.clone(),
+        }
+    }
+
+    /// Open a plain command in its own window (editor, debate moderator …).
+    fn open_window(&mut self, name: &str, cwd: &std::path::Path, script: String) {
+        self.ensure_size();
+        let wrapped = format!("{script}; echo; echo '[qoral] finished. Press Enter to close this window.'; read _");
+        self.send(ClientMsg::Spawn(SpawnReq {
+            harness: "cmd".into(),
+            name: Some(name.into()),
+            cwd: Some(cwd.display().to_string()),
+            prompt: None,
+            focus: true,
+            command: Some(vec!["sh".into(), "-c".into(), wrapped]),
+        }));
+    }
+
+    fn open_knowledge(&mut self) {
+        let cwd = self.project_dir();
+        let file = cwd.join(".qoral/KNOWLEDGE.md");
+        let script = format!(
+            "if [ -f {f} ]; then ${{EDITOR:-less}} {f}; else echo 'no knowledge yet at {f}'; echo; echo '(sessions are documented when they end; agents can also call qoral_remember)'; fi",
+            f = shq(&file.display().to_string())
+        );
+        let name = format!("knowledge-{:x}", db::now_ms() % 4096);
+        self.open_window(&name, &cwd, script);
+    }
+
+    fn start_debate(&mut self) {
+        self.mode = Mode::Input { label: "debate".into(), value: String::new(), placeholder: "question to debate".into(), pending: Pending::DebateQuestion };
     }
 
     fn submit_input(&mut self, pending: Pending, value: String) {
@@ -164,7 +206,23 @@ impl App {
                 self.mode = Mode::List;
                 self.last_dir = crate::paths::expand_home(&dir);
                 self.ensure_size();
-                self.send(ClientMsg::Spawn(SpawnReq { harness, name: Some(name), cwd: Some(dir), prompt: if v.is_empty() { None } else { Some(v) }, focus: true }));
+                self.send(ClientMsg::Spawn(SpawnReq { harness, name: Some(name), cwd: Some(dir), prompt: if v.is_empty() { None } else { Some(v) }, focus: true, command: None }));
+            }
+            Pending::DebateQuestion => {
+                if v.is_empty() {
+                    self.mode = Mode::List;
+                    return;
+                }
+                let def = crate::paths::short_dir(&self.project_dir());
+                self.mode = Mode::Input { label: "dir".into(), value: String::new(), placeholder: def, pending: Pending::DebateDir { question: v } };
+            }
+            Pending::DebateDir { question } => {
+                let dir = if v.is_empty() { self.project_dir().display().to_string() } else { v };
+                self.mode = Mode::Pick {
+                    label: "build the decision afterwards?".into(),
+                    options: vec![('y', "yes, spawn a builder".into()), ('n', "no, decide only".into())],
+                    pending: Pending::DebateBuild { question, dir },
+                };
             }
             Pending::Message { to } => {
                 self.mode = Mode::List;
@@ -321,10 +379,22 @@ impl App {
                 KeyCode::Esc | KeyCode::Char('q') => {}
                 KeyCode::Char(c) if options.iter().any(|(k, _)| *k == c) => {
                     let picked = options.iter().find(|(k, _)| *k == c).unwrap().1.clone();
-                    if let Pending::SpawnHarness = pending {
-                        let taken: Vec<String> = self.agents.iter().map(|a| a.name.clone()).collect();
-                        let def = crate::harness::suggest_name(&taken);
-                        self.mode = Mode::Input { label: "name".into(), value: String::new(), placeholder: def, pending: Pending::SpawnName { harness: picked } };
+                    match pending {
+                        Pending::SpawnHarness => {
+                            let taken: Vec<String> = self.agents.iter().map(|a| a.name.clone()).collect();
+                            let def = crate::harness::suggest_name(&taken);
+                            self.mode = Mode::Input { label: "name".into(), value: String::new(), placeholder: def, pending: Pending::SpawnName { harness: picked } };
+                        }
+                        Pending::DebateBuild { question, dir } => {
+                            let build = c == 'y';
+                            let cwd = crate::paths::expand_home(&dir);
+                            self.last_dir = cwd.clone();
+                            let script = format!("{} debate {} --dir {}{}", shq(&self_exe()), shq(&question), shq(&cwd.display().to_string()), if build { " --build" } else { "" });
+                            let name = format!("debate-{:x}", db::now_ms() % 4096);
+                            self.open_window(&name, &cwd, script);
+                            self.flash("debate started · moderator output on the right", 5000);
+                        }
+                        _ => {}
                     }
                 }
                 _ => self.mode = Mode::Pick { label, options, pending },
@@ -386,8 +456,8 @@ impl App {
                     KeyCode::Char('?') => self.mode = Mode::Help,
                     KeyCode::Char('d') => self.quit = true,
                     KeyCode::Char('Q') => self.mode = Mode::Confirm { text: "quit qoral and kill every agent? (y/N)".into(), pending: Pending::QuitAll },
-                    KeyCode::Char('D') => self.flash("debates: run `qoral debate \"question\" --dir <project>` (TUI shortcut coming)", 6000),
-                    KeyCode::Char('o') => self.flash("docs: run `qoral notes <dir>` (TUI shortcut coming)", 5000),
+                    KeyCode::Char('D') => self.start_debate(),
+                    KeyCode::Char('o') => self.open_knowledge(),
                     KeyCode::Char('c') if ctrl => self.flash("d detaches · Q quits all", 3000),
                     KeyCode::Char(c @ '1'..='9') => {
                         let i = c as usize - '1' as usize;
@@ -482,6 +552,7 @@ pub async fn run(initial: Option<String>) -> Result<()> {
         log_scroll: 0,
         last_dir: std::env::current_dir().unwrap_or_else(|_| dirs::home_dir().unwrap_or_default()),
         quit: false,
+        theme: theme::load(),
         tx: tx.clone(),
         sent_size: (0, 0),
         db: Db::open()?,

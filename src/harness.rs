@@ -70,8 +70,18 @@ pub fn knowledge_section(cwd: &Path) -> String {
     out
 }
 
-fn self_exe() -> String {
+pub fn self_exe() -> String {
     std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_else(|_| "qoral".into())
+}
+
+/// A plain command window (editor, debate moderator, shell). No MCP, no briefing.
+pub fn command_launch(argv: Vec<String>) -> Launch {
+    Launch { argv, env: vec![], notices: vec![], session_id: None }
+}
+
+/// POSIX single-quote for embedding in `sh -c`.
+pub fn shq(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
 }
 
 pub fn build_launch(harness: &str, name: &str, cwd: &Path, prompt: Option<&str>) -> Result<Launch> {

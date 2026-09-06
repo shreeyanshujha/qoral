@@ -14,7 +14,7 @@ use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, Pt
 use tokio::sync::mpsc;
 
 use crate::db;
-use crate::harness::{self, Launch};
+use crate::harness::Launch;
 use crate::proto::{self, attr, mode, Cell, Color, Frame};
 
 #[derive(Clone)]
@@ -63,17 +63,19 @@ pub struct Agent {
 }
 
 impl Agent {
-    /// Spawn the harness in a PTY. Bytes it prints are forwarded to `bytes_tx` as (name, bytes).
+    /// Spawn `launch` in a PTY. Bytes it prints are forwarded to `bytes_tx` as (name, bytes)
+    /// and appended to `raw_log` (a fallback transcript source for documentation).
     pub fn spawn(
         name: &str,
         harness_name: &str,
         cwd: &Path,
-        prompt: Option<&str>,
+        task: Option<&str>,
+        launch: Launch,
         cols: u16,
         rows: u16,
         bytes_tx: mpsc::UnboundedSender<(String, Vec<u8>)>,
+        raw_log: Option<PathBuf>,
     ) -> Result<Agent> {
-        let launch = harness::build_launch(harness_name, name, cwd, prompt)?;
         let pty_system = native_pty_system();
         let pair = pty_system
             .openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
@@ -92,15 +94,24 @@ impl Agent {
         drop(pair.slave);
         let killer = child.clone_killer();
 
-        // reader thread: PTY -> daemon
+        // reader thread: PTY -> daemon (+ raw log on disk)
         let mut reader = pair.master.try_clone_reader().context("clone reader")?;
         let rname = name.to_string();
+        let mut log_file = raw_log.as_ref().and_then(|p| {
+            let _ = std::fs::remove_file(p);
+            std::fs::OpenOptions::new().create(true).append(true).open(p).ok()
+        });
         thread::Builder::new().name(format!("pty-read-{name}")).spawn(move || {
             let mut buf = [0u8; 16 * 1024];
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) | Err(_) => break,
                     Ok(n) => {
+                        if let Some(f) = log_file.as_mut() {
+                            if f.write_all(&buf[..n]).is_err() {
+                                log_file = None;
+                            }
+                        }
                         if bytes_tx.send((rname.clone(), buf[..n].to_vec())).is_err() {
                             break;
                         }
@@ -128,7 +139,7 @@ impl Agent {
             name: name.to_string(),
             harness: harness_name.to_string(),
             cwd: cwd.to_path_buf(),
-            task: prompt.map(|p| p.chars().take(200).collect()),
+            task: task.map(|p| p.chars().take(200).collect()),
             created_at: db::now_ms(),
             exited_at: None,
             exit_code: None,
@@ -193,6 +204,27 @@ impl Agent {
     pub fn scroll(&mut self, delta: i32) {
         self.term.scroll_display(Scroll::Delta(delta));
         self.dirty = true;
+    }
+
+    /// Everything the emulator holds: scrollback history followed by the visible screen.
+    pub fn history_text(&self) -> String {
+        let grid = self.term.grid();
+        let hist = grid.history_size() as i32;
+        let mut out = String::new();
+        for l in -hist..(self.rows as i32) {
+            let row = &grid[Line(l)];
+            let mut line = String::new();
+            for c in 0..self.cols as usize {
+                let cell = &row[Column(c)];
+                if cell.flags.contains(Flags::WIDE_CHAR_SPACER) {
+                    continue;
+                }
+                line.push(cell.c);
+            }
+            out.push_str(line.trim_end());
+            out.push('\n');
+        }
+        out
     }
 
     /// The visible screen (ignoring any scrollback offset), as plain text lines.

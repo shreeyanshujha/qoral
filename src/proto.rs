@@ -12,6 +12,9 @@ pub struct SpawnReq {
     pub cwd: Option<String>,
     pub prompt: Option<String>,
     pub focus: bool,
+    /// Internal: run this argv instead of a harness (harness becomes "cmd"). Used for editor/debate windows.
+    #[serde(default)]
+    pub command: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,6 +30,8 @@ pub enum ClientMsg {
     Spawn(SpawnReq),
     Kill { name: String },
     Focus { name: String },
+    /// Write a session note for a running agent now (snapshot; the agent keeps running).
+    Document { name: String },
     ListAgents,
     Shutdown,
     Ping,
