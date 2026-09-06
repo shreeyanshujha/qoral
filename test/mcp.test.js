@@ -6,16 +6,16 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const BIN = fileURLToPath(new URL('../bin/agora.js', import.meta.url));
+const BIN = fileURLToPath(new URL('../bin/qoral.js', import.meta.url));
 let tmp, env;
 
 before(() => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'agora-mcp-'));
-  env = { ...process.env, AGORA_HOME: path.join(tmp, 'home'), AGORA_SOCKET: `agoratest-mcp-${process.pid}` };
+  tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'qoral-mcp-'));
+  env = { ...process.env, QORAL_HOME: path.join(tmp, 'home'), QORAL_SOCKET: `qoraltest-mcp-${process.pid}` };
 });
 after(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
-/** Send JSON-RPC lines to `agora mcp` and collect the responses by id. */
+/** Send JSON-RPC lines to `qoral mcp` and collect the responses by id. */
 function rpc(agent, messages) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [BIN, 'mcp', '--agent', agent], { env, cwd: tmp });
@@ -46,9 +46,9 @@ test('initialize + tools/list', async () => {
     req(2, 'tools/list'),
     req(3, 'ping'),
   ]);
-  assert.equal(r[1].result.serverInfo.name, 'agora');
+  assert.equal(r[1].result.serverInfo.name, 'qoral');
   const names = r[2].result.tools.map((t) => t.name);
-  for (const n of ['agora_send', 'agora_inbox', 'agora_wait', 'agora_spawn', 'agora_list_agents', 'agora_log', 'agora_remember', 'agora_knowledge', 'agora_whoami']) {
+  for (const n of ['qoral_send', 'qoral_inbox', 'qoral_wait', 'qoral_spawn', 'qoral_list_agents', 'qoral_log', 'qoral_remember', 'qoral_knowledge', 'qoral_whoami']) {
     assert.ok(names.includes(n), `missing tool ${n}`);
   }
   assert.deepEqual(r[3].result, {});
@@ -56,11 +56,11 @@ test('initialize + tools/list', async () => {
 
 test('send to human, log, unknown recipient error, unknown method', async () => {
   const r = await rpc('tester', [
-    call(1, 'agora_send', { to: 'human', message: 'hello operator' }),
-    call(2, 'agora_log', {}),
-    call(3, 'agora_send', { to: 'nobody', message: 'x' }),
+    call(1, 'qoral_send', { to: 'human', message: 'hello operator' }),
+    call(2, 'qoral_log', {}),
+    call(3, 'qoral_send', { to: 'nobody', message: 'x' }),
     req(4, 'no/such'),
-    call(5, 'agora_whoami'),
+    call(5, 'qoral_whoami'),
   ]);
   assert.match(textOf(r[1]), /Queued for human/);
   assert.match(textOf(r[2]), /tester → human: hello operator/);
@@ -70,22 +70,22 @@ test('send to human, log, unknown recipient error, unknown method', async () => 
   assert.match(textOf(r[5]), /"tester"/);
 });
 
-test('agora_wait returns an already-queued message; inbox marks read', async () => {
+test('qoral_wait returns an already-queued message; inbox marks read', async () => {
   // "bob" is not a registered agent, so the CLI would refuse to address him; queue the row directly.
-  process.env.AGORA_HOME = env.AGORA_HOME;
+  process.env.QORAL_HOME = env.QORAL_HOME;
   const db = await import('../lib/db.js');
   db.addMessage('alice', 'bob', 'ping bob');
-  const r = await rpc('bob', [call(1, 'agora_wait', { timeout_seconds: 5 }), call(2, 'agora_inbox')]);
+  const r = await rpc('bob', [call(1, 'qoral_wait', { timeout_seconds: 5 }), call(2, 'qoral_inbox')]);
   assert.match(textOf(r[1]), /alice → bob: ping bob/);
   assert.equal(textOf(r[2]), 'Inbox empty.');
 });
 
-test('agora_remember writes KNOWLEDGE.md in cwd and agora_knowledge reads it back', async () => {
+test('qoral_remember writes KNOWLEDGE.md in cwd and qoral_knowledge reads it back', async () => {
   const r = await rpc('tester', [
-    call(1, 'agora_remember', { text: 'CI runs on Node 26 only.' }),
-    call(2, 'agora_knowledge'),
+    call(1, 'qoral_remember', { text: 'CI runs on Node 26 only.' }),
+    call(2, 'qoral_knowledge'),
   ]);
   assert.match(textOf(r[1]), /Saved to .*KNOWLEDGE\.md/);
   assert.match(textOf(r[2]), /CI runs on Node 26 only/);
-  assert.ok(fs.existsSync(path.join(tmp, '.agora', 'KNOWLEDGE.md')));
+  assert.ok(fs.existsSync(path.join(tmp, '.qoral', 'KNOWLEDGE.md')));
 });

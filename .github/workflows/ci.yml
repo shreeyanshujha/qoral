@@ -29,6 +29,6 @@ jobs:
         run: npm test
       - name: installer + doctor
         run: |
-          AGORA_BIN_DIR="$RUNNER_TEMP/bin" sh ./install.sh
-          "$RUNNER_TEMP/bin/agora" version
-          "$RUNNER_TEMP/bin/agora" doctor || true   # no agent CLIs on CI, so doctor reports a problem; that's expected
+          QORAL_BIN_DIR="$RUNNER_TEMP/bin" sh ./install.sh
+          "$RUNNER_TEMP/bin/qoral" version
+          "$RUNNER_TEMP/bin/qoral" doctor || true   # no agent CLIs on CI, so doctor reports a problem; that's expected

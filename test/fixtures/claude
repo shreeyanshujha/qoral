@@ -1,11 +1,11 @@
 #!/bin/sh
-# Fake "claude" for tests. Looks enough like a coding-agent prompt for agora's status
+# Fake "claude" for tests. Looks enough like a coding-agent prompt for qoral's status
 # detection, logs its arguments and every line typed into it to $FAKE_LOG, exits on /exit.
 log="${FAKE_LOG:-/dev/null}"
 if [ "$1" = "--version" ]; then echo "fake-claude 0.0.1"; exit 0; fi
 if [ "$1" = "-p" ]; then echo "fake print mode"; exit 0; fi
 printf 'ARGS: %s\n' "$*" >> "$log"
-printf 'fake claude started (agent %s)\n' "${AGORA_AGENT:-?}"
+printf 'fake claude started (agent %s)\n' "${QORAL_AGENT:-?}"
 while :; do
   printf '\n❯ \n  ? for shortcuts\n'
   IFS= read -r line || exit 0

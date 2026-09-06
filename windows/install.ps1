@@ -1,13 +1,13 @@
-# agora Windows installer (PowerShell, run from a clone of the repo that lives on the WSL filesystem
+# qoral Windows installer (PowerShell, run from a clone of the repo that lives on the WSL filesystem
 # or on Windows; either way the Linux side is what runs).
 #
 #   powershell -ExecutionPolicy Bypass -File windows\install.ps1
 #
 # What it does:
 #   1. checks WSL2 is installed and a distro exists
-#   2. runs ./install.sh inside WSL (installs the Linux-side `agora` command)
-#   3. copies agora.ps1 / agora.cmd to %LOCALAPPDATA%\agora\bin and adds that to your user PATH
-# Afterwards `agora` works in PowerShell, cmd and Windows Terminal, running inside WSL.
+#   2. runs ./install.sh inside WSL (installs the Linux-side `qoral` command)
+#   3. copies qoral.ps1 / qoral.cmd to %LOCALAPPDATA%\qoral\bin and adds that to your user PATH
+# Afterwards `qoral` works in PowerShell, cmd and Windows Terminal, running inside WSL.
 
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -42,10 +42,10 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-$binDir = Join-Path $env:LOCALAPPDATA 'agora\bin'
+$binDir = Join-Path $env:LOCALAPPDATA 'qoral\bin'
 New-Item -ItemType Directory -Force -Path $binDir | Out-Null
-Copy-Item (Join-Path $here 'agora.ps1') $binDir -Force
-Copy-Item (Join-Path $here 'agora.cmd') $binDir -Force
+Copy-Item (Join-Path $here 'qoral.ps1') $binDir -Force
+Copy-Item (Join-Path $here 'qoral.cmd') $binDir -Force
 
 $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 if (($userPath -split ';') -notcontains $binDir) {
@@ -55,5 +55,5 @@ if (($userPath -split ';') -notcontains $binDir) {
     Write-Host "$binDir already on PATH" -ForegroundColor Green
 }
 
-Write-Host "`nDone. In a new PowerShell / Windows Terminal window run:  agora doctor   then:  agora" -ForegroundColor Green
-Write-Host "Tip: Windows Terminal binds Alt+arrows to its own pane focus; use Alt+h / Alt+l inside agora." -ForegroundColor DarkGray
+Write-Host "`nDone. In a new PowerShell / Windows Terminal window run:  qoral doctor   then:  qoral" -ForegroundColor Green
+Write-Host "Tip: Windows Terminal binds Alt+arrows to its own pane focus; use Alt+h / Alt+l inside qoral." -ForegroundColor DarkGray

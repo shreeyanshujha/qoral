@@ -1,5 +1,5 @@
 {
-  "name": "agora",
+  "name": "qoral",
   "version": "0.2.0",
   "description": "Many coding agents, one terminal. Run Claude Code, Codex, Antigravity and Gemini CLI side by side; they message each other, debate decisions, and every session leaves documentation behind.",
   "keywords": [
@@ -15,17 +15,17 @@
     "tui",
     "developer-tools"
   ],
-  "homepage": "https://github.com/shreeyanshujha/agora#readme",
-  "bugs": "https://github.com/shreeyanshujha/agora/issues",
+  "homepage": "https://github.com/shreeyanshujha/qoral#readme",
+  "bugs": "https://github.com/shreeyanshujha/qoral/issues",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/shreeyanshujha/agora.git"
+    "url": "git+https://github.com/shreeyanshujha/qoral.git"
   },
   "license": "MIT",
   "author": "shreeyanshujha (https://github.com/shreeyanshujha)",
   "type": "module",
   "bin": {
-    "agora": "./bin/agora.js"
+    "qoral": "./bin/qoral.js"
   },
   "files": [
     "bin/",
@@ -45,6 +45,6 @@
   "scripts": {
     "test": "node --test",
     "check": "for f in bin/*.js lib/*.js test/*.js; do node --check \"$f\" || exit 1; done && sh -n install.sh",
-    "doctor": "node bin/agora.js doctor"
+    "doctor": "node bin/qoral.js doctor"
   }
 }

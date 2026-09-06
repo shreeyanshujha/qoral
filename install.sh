@@ -1,12 +1,12 @@
 #!/bin/sh
-# agora installer for Linux, macOS and WSL2.
-# Checks Node >= 22.13 and tmux >= 3.2, then links `agora` into a bin directory on your PATH.
-#   ./install.sh                  -> ~/.local/bin/agora (Linux/WSL) or /usr/local/bin (macOS if writable) …
-#   AGORA_BIN_DIR=/some/bin ./install.sh
+# qoral installer for Linux, macOS and WSL2.
+# Checks Node >= 22.13 and tmux >= 3.2, then links `qoral` into a bin directory on your PATH.
+#   ./install.sh                  -> ~/.local/bin/qoral (Linux/WSL) or /usr/local/bin (macOS if writable) …
+#   QORAL_BIN_DIR=/some/bin ./install.sh
 set -eu
 
 here="$(cd "$(dirname "$0")" && pwd)"
-bin="$here/bin/agora.js"
+bin="$here/bin/qoral.js"
 
 red()   { printf '\033[31m%s\033[0m\n' "$*"; }
 green() { printf '\033[32m%s\033[0m\n' "$*"; }
@@ -19,7 +19,7 @@ case "$os" in
   MINGW*|MSYS*|CYGWIN*) red "Git Bash / MSYS is not supported: tmux is required. Use WSL2 (see windows/install.ps1)."; exit 1 ;;
   *) platform="$os" ;;
 esac
-echo "agora installer · $platform"
+echo "qoral installer · $platform"
 
 # --- node ---
 if ! command -v node >/dev/null 2>&1; then
@@ -53,13 +53,13 @@ fi
 green "tmux $tmuxv"
 
 if ! infocmp tmux-256color >/dev/null 2>&1; then
-  yellow "terminfo has no tmux-256color entry; agora will fall back to screen-256color (fine)."
+  yellow "terminfo has no tmux-256color entry; qoral will fall back to screen-256color (fine)."
   [ "$platform" = macOS ] && echo "  optional fix: brew install ncurses"
 fi
 
 # --- link ---
-if [ -n "${AGORA_BIN_DIR:-}" ]; then
-  dest_dir="$AGORA_BIN_DIR"
+if [ -n "${QORAL_BIN_DIR:-}" ]; then
+  dest_dir="$QORAL_BIN_DIR"
 elif [ -d "$HOME/.local/bin" ]; then
   dest_dir="$HOME/.local/bin"
 elif [ "$platform" = macOS ] && [ -w /usr/local/bin ]; then
@@ -71,8 +71,8 @@ else
 fi
 mkdir -p "$dest_dir"
 chmod +x "$bin"
-ln -sfn "$bin" "$dest_dir/agora"
-green "linked $dest_dir/agora -> $bin"
+ln -sfn "$bin" "$dest_dir/qoral"
+green "linked $dest_dir/qoral -> $bin"
 
 case ":$PATH:" in
   *":$dest_dir:"*) ;;
@@ -89,6 +89,6 @@ done
 echo
 case "$platform" in
   macOS) echo "Tip: make Option send Meta so Alt chords work (Terminal.app: Keyboard → Use Option as Meta key; iTerm2: Left Option → Esc+)." ;;
-  WSL2)  echo "Tip: Windows Terminal uses Alt+arrows for its own panes; use Alt+h / Alt+l in agora." ;;
+  WSL2)  echo "Tip: Windows Terminal uses Alt+arrows for its own panes; use Alt+h / Alt+l in qoral." ;;
 esac
-echo "Done. Run: agora doctor   then: agora"
+echo "Done. Run: qoral doctor   then: qoral"
