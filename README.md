@@ -39,6 +39,7 @@ agora send all "wrap up in 10 minutes"
 agora list                         # agents + status
 agora log                          # bus traffic
 agora kill grace
+agora debate "how should divide() handle division by zero?" --dir ~/proj --build
 agora stop                         # tear everything down
 ```
 
@@ -47,6 +48,7 @@ agora stop                         # tear everything down
 | key | action |
 |---|---|
 | `n` | new agent: harness, name, directory, task |
+| `D` | debate a question with three agents, optionally build the result |
 | `Enter` / `→` / `1-9` | show that agent in the main pane |
 | `j` `k` `↑` `↓` | move selection |
 | `m` | message the selected agent |
@@ -101,6 +103,24 @@ Messages live in SQLite at `~/.local/share/agora/agora.db`. The sidebar process 
 
 Every agent's system prompt explains its name, who else is in the room, and the etiquette: be self-contained, coordinate before touching shared files, report back when delegated work is done.
 
+## Debates: let agents argue it out
+
+```sh
+agora debate "Should we move the tests to node:test, and how?" --dir ~/proj --build
+```
+
+agora spawns three participants with different perspectives (a pragmatist, a skeptic, a minimalist; a fourth, an architect, if you ask for four) on different harnesses, and moderates them itself over the bus. The moderator is a deterministic process, not another model, so the protocol is enforced:
+
+1. Each participant reads the code, then sends an opening position to `moderator` ending in `STANCE:` and `CONSENSUS:` lines.
+2. Each round the moderator relays everyone's positions to everyone else. Participants critique, concede or hold, and reply.
+3. It stops when every participant writes `CONSENSUS: yes`, or after the round limit.
+4. The summarizer writes a decision document to `.agora/decisions/<date>-<slug>.md`: decision or recommendation, rationale, alternatives considered, dissent and risks, a numbered implementation plan, and the full transcript. A one-line link is added under `## Decisions` in `KNOWLEDGE.md`, so every future agent inherits the outcome.
+5. With `--build`, a builder agent implements the plan, runs the tests, and reports to you.
+
+Flags: `--agents claude,agy,codex` (2 to 4, repeats allowed), `--rounds 3`, `--timeout 300` seconds per round, `--keep` to leave participants running for follow-up questions. From the sidebar, `D` starts a debate in a new window so you can watch the moderator's log.
+
+In a live run, two Claude participants and one agy participant argued a testing-structure question for two rounds, the minimalist and pragmatist converged with explicit concessions, the decision document cited the project's zero-dependency rule and Node version from the knowledge digest, and the builder implemented it with passing tests. Participants stuck on a permission prompt are flagged in the moderator log and on the bus, since a silent participant is the main way a round runs to its timeout.
+
 ## Living documentation
 
 Every session leaves knowledge behind, per project, in a `.agora/` folder inside the project directory:
@@ -147,6 +167,7 @@ lib/mcp.js       the stdio MCP server agents talk through
 lib/bus.js       status detection + message delivery loop
 lib/status.js    pane-text heuristics
 lib/knowledge.js living docs: session notes, KNOWLEDGE.md digest, summarizer
+lib/debate.js    moderated multi-agent debates → .agora/decisions/
 lib/transcript.js transcript collection (Claude JSONL / Codex rollout / Gemini chat / raw log / scrollback)
 lib/ui.js        sidebar TUI
 lib/db.js        SQLite (node:sqlite)
