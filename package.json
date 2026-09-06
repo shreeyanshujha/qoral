@@ -1,10 +1,50 @@
 {
   "name": "agora",
-  "version": "0.1.0",
-  "description": "Terminal workspace that runs many coding agents (Claude Code, Codex, Gemini CLI) side by side and lets them talk to each other.",
-  "type": "module",
-  "bin": { "agora": "./bin/agora.js" },
-  "engines": { "node": ">=22.13" },
+  "version": "0.2.0",
+  "description": "Many coding agents, one terminal. Run Claude Code, Codex, Antigravity and Gemini CLI side by side; they message each other, debate decisions, and every session leaves documentation behind.",
+  "keywords": [
+    "ai",
+    "agents",
+    "claude-code",
+    "codex",
+    "gemini-cli",
+    "antigravity",
+    "tmux",
+    "multiplexer",
+    "mcp",
+    "tui",
+    "developer-tools"
+  ],
+  "homepage": "https://github.com/shreeyanshujha/agora#readme",
+  "bugs": "https://github.com/shreeyanshujha/agora/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shreeyanshujha/agora.git"
+  },
   "license": "MIT",
-  "private": true
+  "author": "shreeyanshujha (https://github.com/shreeyanshujha)",
+  "type": "module",
+  "bin": {
+    "agora": "./bin/agora.js"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "install.sh",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  },
+  "os": [
+    "linux",
+    "darwin"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "check": "for f in bin/*.js lib/*.js test/*.js; do node --check \"$f\" || exit 1; done && sh -n install.sh",
+    "doctor": "node bin/agora.js doctor"
+  }
 }

@@ -1,0 +1,37 @@
+# Publishes to npm and creates a GitHub release when a version tag is pushed:
+#   npm version minor && git push --follow-tags
+# Requires the repository secret NPM_TOKEN (an npm automation token with publish rights).
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - run: sudo apt-get update -q && sudo apt-get install -y -q tmux
+      - run: npm run check && npm test
+      - name: check tag matches package.json
+        run: |
+          v="v$(node -p 'require("./package.json").version')"
+          [ "$v" = "${GITHUB_REF_NAME}" ] || { echo "tag ${GITHUB_REF_NAME} != package version $v"; exit 1; }
+      - name: publish to npm
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: github release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          body_path: CHANGELOG.md

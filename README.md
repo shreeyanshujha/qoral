@@ -29,7 +29,7 @@ cd agora && ./install.sh     # checks node/tmux, links `agora` onto your PATH
 agora doctor                 # verifies everything, prints platform tips
 ```
 
-`npm install -g .` in the clone works too. There is nothing to build and no `node_modules`.
+`npm install -g .` in the clone works too. There is nothing to build and no `node_modules`. Packaging templates for the AUR and Homebrew live in `packaging/`.
 
 ## Platforms
 
@@ -172,6 +172,17 @@ Every session leaves knowledge behind, per project, in a `.agora/` folder inside
 
 `summarizer` accepts `auto`, `claude`, `codex`, `gemini`, `agy`, or `none`. `model` is passed through to the CLI. Env overrides: `AGORA_SUMMARIZER`, `AGORA_SUMMARIZER_MODEL`. Commit `.agora/` if you want the knowledge shared with your team, or add it to `.gitignore` to keep it local.
 
+## Status
+
+**Beta.** Linux and macOS are the supported platforms; Windows runs via WSL2 but is unofficial until a native story exists. Tested against real agents: Claude Code and Antigravity end to end (messaging, waiting, nudges, documentation, debates). Codex and Gemini launch with the bus wired but have had less real-world time. `npm test` exercises the workspace, bus, status detection and MCP server with a fake harness, and CI runs it on Ubuntu and macOS.
+
+Things to know before relying on it:
+
+- **It edits two Antigravity config files** the first time you spawn an agy agent (MCP registration and `mcp(agora/*)` allow rules), and pre-approves its own tools in Claude Code with `--allowedTools mcp__agora`. It tells you when it does. Nothing else on your machine is touched outside `~/.local/share/agora` and `<project>/.agora/`.
+- **Agents drive each other.** A message from one agent is typed into another's prompt. Content in a repository could, in principle, steer one agent into instructing another. Treat agents in agora like agents anywhere: give them the permissions you'd give a contractor, and read what they send you.
+- **Spawning is capped.** Agents may start other agents, but only up to `max_agents` (default 8). Humans can always spawn more.
+- **You pay for the tokens.** Every agent, every debate round, and every session summary runs on your own CLI subscriptions or API keys.
+
 ## Notes and limits
 
 - **First run per project**: Claude Code and agy ask whether you trust the folder, Codex may ask you to sign in, Gemini may ask about tool permissions. agora flags these as `!` so you can answer them.
@@ -194,7 +205,9 @@ lib/status.js    pane-text heuristics
 lib/knowledge.js living docs: session notes, KNOWLEDGE.md digest, summarizer
 lib/debate.js    moderated multi-agent debates → .agora/decisions/
 lib/doctor.js    `agora doctor` environment checks
+test/            node:test suite; fixtures/claude is a fake harness so CI needs no real agent
 install.sh       Linux / macOS / WSL installer
+packaging/       AUR PKGBUILD and Homebrew formula templates
 windows/         PowerShell + cmd launchers and installer (run agora inside WSL2)
 lib/transcript.js transcript collection (Claude JSONL / Codex rollout / Gemini chat / raw log / scrollback)
 lib/ui.js        sidebar TUI

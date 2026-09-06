@@ -1,0 +1,28 @@
+# Maintainer: shreeyanshujha <https://github.com/shreeyanshujha>
+# AUR package building from the latest tagged release.
+# Update pkgver + sha256sums on each release (or use `updpkgsums`).
+pkgname=agora
+pkgver=0.2.0
+pkgrel=1
+pkgdesc="Many coding agents, one terminal: run Claude Code, Codex, Antigravity and Gemini CLI side by side; they talk, debate, and document."
+arch=('any')
+url="https://github.com/shreeyanshujha/agora"
+license=('MIT')
+depends=('nodejs>=22.13' 'tmux>=3.2')
+optdepends=(
+  'claude-code: Claude Code harness'
+  'codex: OpenAI Codex harness'
+  'gemini-cli: Gemini CLI harness'
+)
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+package() {
+  cd "$pkgname-$pkgver"
+  install -dm755 "$pkgdir/usr/lib/$pkgname"
+  cp -r bin lib package.json "$pkgdir/usr/lib/$pkgname/"
+  install -dm755 "$pkgdir/usr/bin"
+  ln -s "/usr/lib/$pkgname/bin/agora.js" "$pkgdir/usr/bin/agora"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+}

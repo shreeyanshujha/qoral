@@ -1,0 +1,16 @@
+#!/bin/sh
+# Fake "claude" for tests. Looks enough like a coding-agent prompt for agora's status
+# detection, logs its arguments and every line typed into it to $FAKE_LOG, exits on /exit.
+log="${FAKE_LOG:-/dev/null}"
+if [ "$1" = "--version" ]; then echo "fake-claude 0.0.1"; exit 0; fi
+if [ "$1" = "-p" ]; then echo "fake print mode"; exit 0; fi
+printf 'ARGS: %s\n' "$*" >> "$log"
+printf 'fake claude started (agent %s)\n' "${AGORA_AGENT:-?}"
+while :; do
+  printf '\n❯ \n  ? for shortcuts\n'
+  IFS= read -r line || exit 0
+  printf 'INPUT: %s\n' "$line" >> "$log"
+  [ "$line" = "/exit" ] && exit 0
+  printf '  esc to interrupt\n'
+  sleep 0.5
+done

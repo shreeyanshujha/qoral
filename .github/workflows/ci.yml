@@ -1,0 +1,34 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}, node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: install tmux
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then brew install tmux; else sudo apt-get update -q && sudo apt-get install -y -q tmux; fi
+          tmux -V
+      - name: syntax
+        run: npm run check
+      - name: tests
+        run: npm test
+      - name: installer + doctor
+        run: |
+          AGORA_BIN_DIR="$RUNNER_TEMP/bin" sh ./install.sh
+          "$RUNNER_TEMP/bin/agora" version
+          "$RUNNER_TEMP/bin/agora" doctor || true   # no agent CLIs on CI, so doctor reports a problem; that's expected
