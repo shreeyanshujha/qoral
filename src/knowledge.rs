@@ -384,44 +384,42 @@ pub fn collect_transcript(s: &SessionInfo) -> Option<Transcript> {
 
 pub fn run_summarizer(prompt: &str, input: &str, cwd: &Path, summarizer: &str) -> Result<String> {
     let model = std::env::var("QORAL_SUMMARIZER_MODEL").ok().or_else(|| config::load().model);
-    let mut cmd;
-    let stdin_text: String;
-    match summarizer {
+    let (mut cmd, stdin_text): (Command, String) = match summarizer {
         "claude" => {
-            cmd = Command::new("claude");
-            cmd.args(["-p", "--output-format", "text", "--tools", "", "--strict-mcp-config", "--system-prompt", WRITER_SYSTEM]);
+            let mut c = Command::new("claude");
+            c.args(["-p", "--output-format", "text", "--tools", "", "--strict-mcp-config", "--system-prompt", WRITER_SYSTEM]);
             if let Some(m) = &model {
-                cmd.args(["--model", m]);
+                c.args(["--model", m]);
             }
-            cmd.arg(prompt);
-            stdin_text = input.to_string();
+            c.arg(prompt);
+            (c, input.to_string())
         }
         "codex" => {
-            cmd = Command::new("codex");
-            cmd.args(["exec", "--skip-git-repo-check", "-C"]).arg(cwd).args(["-s", "read-only"]);
+            let mut c = Command::new("codex");
+            c.args(["exec", "--skip-git-repo-check", "-C"]).arg(cwd).args(["-s", "read-only"]);
             if let Some(m) = &model {
-                cmd.args(["-m", m]);
+                c.args(["-m", m]);
             }
-            stdin_text = format!("{prompt}\n\n{input}");
+            (c, format!("{prompt}\n\n{input}"))
         }
         "gemini" => {
-            cmd = Command::new("gemini");
-            cmd.args(["-p", prompt]);
+            let mut c = Command::new("gemini");
+            c.args(["-p", prompt]);
             if let Some(m) = &model {
-                cmd.args(["-m", m]);
+                c.args(["-m", m]);
             }
-            stdin_text = input.to_string();
+            (c, input.to_string())
         }
         "agy" => {
-            cmd = Command::new("agy");
-            cmd.args(["-p", &format!("{prompt}\n\n{input}"), "--disable-slash-commands"]);
+            let mut c = Command::new("agy");
+            c.args(["-p", &format!("{prompt}\n\n{input}"), "--disable-slash-commands"]);
             if let Some(m) = &model {
-                cmd.args(["--model", m]);
+                c.args(["--model", m]);
             }
-            stdin_text = String::new();
+            (c, String::new())
         }
         other => bail!("unknown summarizer {other}"),
-    }
+    };
     cmd.current_dir(cwd).env_remove("QORAL_AGENT").stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = cmd.spawn().with_context(|| format!("run {summarizer}"))?;
     if let Some(mut si) = child.stdin.take() {

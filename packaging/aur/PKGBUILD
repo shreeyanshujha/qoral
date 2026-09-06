@@ -1,14 +1,14 @@
 # Maintainer: shreeyanshujha <https://github.com/shreeyanshujha>
-# AUR package building from the latest tagged release.
-# Update pkgver + sha256sums on each release (or use `updpkgsums`).
+# Builds qoral from the tagged release tarball. Bump pkgver and run `updpkgsums` on each release.
 pkgname=qoral
-pkgver=0.2.0
+pkgver=0.3.0
 pkgrel=1
-pkgdesc="Many coding agents, one terminal: run Claude Code, Codex, Antigravity and Gemini CLI side by side; they talk, debate, and document."
-arch=('any')
+pkgdesc="Many coding agents, one terminal: a multiplexer for Claude Code, Codex, Antigravity and Gemini CLI where agents talk, debate and document"
+arch=('x86_64' 'aarch64')
 url="https://github.com/shreeyanshujha/qoral"
 license=('MIT')
-depends=('nodejs>=22.13' 'tmux>=3.2')
+depends=('gcc-libs')
+makedepends=('cargo')
 optdepends=(
   'claude-code: Claude Code harness'
   'codex: OpenAI Codex harness'
@@ -17,12 +17,28 @@ optdepends=(
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('SKIP')
 
+prepare() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo build --frozen --release
+}
+
+check() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo test --frozen --release -- --skip workspace_roundtrip
+}
+
 package() {
   cd "$pkgname-$pkgver"
-  install -dm755 "$pkgdir/usr/lib/$pkgname"
-  cp -r bin lib package.json "$pkgdir/usr/lib/$pkgname/"
-  install -dm755 "$pkgdir/usr/bin"
-  ln -s "/usr/lib/$pkgname/bin/qoral.js" "$pkgdir/usr/bin/qoral"
+  install -Dm755 "target/release/qoral" "$pkgdir/usr/bin/qoral"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
 }

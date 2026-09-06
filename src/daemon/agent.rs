@@ -65,6 +65,7 @@ pub struct Agent {
 impl Agent {
     /// Spawn `launch` in a PTY. Bytes it prints are forwarded to `bytes_tx` as (name, bytes)
     /// and appended to `raw_log` (a fallback transcript source for documentation).
+    #[allow(clippy::too_many_arguments)]
     pub fn spawn(
         name: &str,
         harness_name: &str,

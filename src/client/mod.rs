@@ -352,7 +352,7 @@ impl App {
             Mode::Input { label, mut value, placeholder, pending } => {
                 match ev.code {
                     KeyCode::Esc => {}
-                    KeyCode::Enter => return self.submit_input(pending, value),
+                    KeyCode::Enter => self.submit_input(pending, value),
                     KeyCode::Backspace => {
                         value.pop();
                         self.mode = Mode::Input { label, value, placeholder, pending };

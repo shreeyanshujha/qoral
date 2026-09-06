@@ -6,8 +6,26 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-06
+
+Rewritten in Rust. qoral is now a single binary that is its own multiplexer; tmux and Node are no longer needed.
+
+### Changed
+- **Architecture.** A daemon owns every agent in a pseudo-terminal (portable-pty) with a full terminal emulator per agent (alacritty_terminal) and 20k lines of scrollback. Clients attach over a Unix socket and receive screen frames at up to 60 fps. Sessions survive closing the terminal; several clients can attach.
+- **Status detection** reads the emulator's screen grid directly instead of scraping tmux.
+- **Documentation transcripts** add the emulator's own scrollback and a raw PTY log as fallbacks.
+- `qoral kill` / `x` document the session in the background; `qoral document <name>` snapshots a running agent.
+- The socket lives in `$XDG_RUNTIME_DIR/qoral/` (keyed by `QORAL_HOME`), so deep data paths no longer break the Unix socket length limit.
+
 ### Added
-- Theming: built-in themes (`default`, `mono`, `nord`, `gruvbox`, `dracula`), user theme files under `~/.local/share/qoral/themes/` or `~/.config/qoral/themes/`, and inline `colors`/`glyphs` overrides in `config.json`. Colors accept names, 256-color indices, or hex (truecolor). `qoral theme` previews; `qoral theme init` scaffolds. Both the sidebar and the tmux status bar follow the theme.
+- Theming: built-in themes (`default`, `mono`, `nord`, `gruvbox`, `dracula`), user theme files under `~/.local/share/qoral/themes/` or `~/.config/qoral/themes/`, inline `colors`/`glyphs` overrides in `config.json`. `qoral theme` previews; `qoral theme init` scaffolds.
+- `qoral up`, `qoral type <agent> <text>`, `qoral screen <agent>` for scripting and tests.
+- Editor and debate windows inside the workspace (`o`, `D`); they close themselves when done.
+- Integration tests (`cargo test`) that drive a real daemon with a fake harness.
+- Prebuilt binaries for Linux (x86_64, aarch64) and macOS (x86_64, aarch64) on each release; `install.sh` prefers them and falls back to a cargo build.
+
+### Removed
+- The Node.js implementation and its tmux dependency.
 
 ## [0.2.0] - 2026-09-06
 

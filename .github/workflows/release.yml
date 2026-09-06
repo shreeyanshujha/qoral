@@ -1,6 +1,6 @@
-# Publishes to npm and creates a GitHub release when a version tag is pushed:
-#   npm version minor && git push --follow-tags
-# Requires the repository secret NPM_TOKEN (an npm automation token with publish rights).
+# Builds release binaries for Linux (x86_64, aarch64) and macOS (x86_64, aarch64), attaches them
+# to a GitHub release, and publishes to crates.io if CARGO_REGISTRY_TOKEN is set.
+#   git tag v0.3.0 && git push --tags
 name: release
 
 on:
@@ -9,29 +9,66 @@ on:
 
 permissions:
   contents: write
-  id-token: write
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
+  build:
+    name: build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,      target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-24.04-arm,   target: aarch64-unknown-linux-gnu }
+          - { os: macos-13,           target: x86_64-apple-darwin }
+          - { os: macos-latest,       target: aarch64-apple-darwin }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - name: check tag matches Cargo.toml
+        run: |
+          v="v$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')"
+          [ "$v" = "${GITHUB_REF_NAME}" ] || { echo "tag ${GITHUB_REF_NAME} != Cargo.toml version $v"; exit 1; }
+      - name: test
+        run: cargo test --locked --target ${{ matrix.target }}
+      - name: build
+        run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: package
+        run: |
+          name="qoral-${GITHUB_REF_NAME}-${{ matrix.target }}"
+          mkdir -p "dist/$name"
+          cp "target/${{ matrix.target }}/release/qoral" README.md LICENSE CHANGELOG.md "dist/$name/"
+          tar -C dist -czf "dist/$name.tar.gz" "$name"
+          (cd dist && shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256")
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: dist/*.tar.gz*
+
   release:
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/download-artifact@v4
         with:
-          node-version: 22
-          registry-url: https://registry.npmjs.org
-      - run: sudo apt-get update -q && sudo apt-get install -y -q tmux
-      - run: npm run check && npm test
-      - name: check tag matches package.json
-        run: |
-          v="v$(node -p 'require("./package.json").version')"
-          [ "$v" = "${GITHUB_REF_NAME}" ] || { echo "tag ${GITHUB_REF_NAME} != package version $v"; exit 1; }
-      - name: publish to npm
-        run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          path: dist
+          merge-multiple: true
       - name: github release
         uses: softprops/action-gh-release@v2
         with:
+          files: dist/*
           generate_release_notes: true
           body_path: CHANGELOG.md
+      - uses: dtolnay/rust-toolchain@stable
+      - name: publish to crates.io (if token configured)
+        if: ${{ env.CARGO_REGISTRY_TOKEN != '' }}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --locked --no-verify

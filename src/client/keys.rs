@@ -104,7 +104,7 @@ pub fn encode_key(ev: &KeyEvent, term_mode: u32) -> Option<Vec<u8>> {
             let p = modifier_param(m);
             out = match n {
                 1..=4 => {
-                    let f = [b'P', b'Q', b'R', b'S'][(n - 1) as usize] as char;
+                    let f = b"PQRS"[(n - 1) as usize] as char;
                     if p == 1 {
                         format!("\x1bO{f}").into_bytes()
                     } else {

@@ -1,91 +1,108 @@
 #!/bin/sh
-# qoral installer for Linux, macOS and WSL2.
-# Checks Node >= 22.13 and tmux >= 3.2, then links `qoral` into a bin directory on your PATH.
-#   ./install.sh                  -> ~/.local/bin/qoral (Linux/WSL) or /usr/local/bin (macOS if writable) …
+# qoral installer for Linux and macOS (and WSL2).
+#
+#   curl -fsSL https://raw.githubusercontent.com/shreeyanshujha/qoral/main/install.sh | sh
+#   ./install.sh                     # from a clone: prefers a prebuilt release, else builds with cargo
+#   ./install.sh --build             # force a local cargo build
 #   QORAL_BIN_DIR=/some/bin ./install.sh
+#   QORAL_VERSION=v0.3.0 ./install.sh
 set -eu
 
-here="$(cd "$(dirname "$0")" && pwd)"
-bin="$here/bin/qoral.js"
+REPO="shreeyanshujha/qoral"
+red()    { printf '\033[31m%s\033[0m\n' "$*"; }
+green()  { printf '\033[32m%s\033[0m\n' "$*"; }
+yellow() { printf '\033[33m%s\033[0m\n' "$*"; }
 
-red()   { printf '\033[31m%s\033[0m\n' "$*"; }
-green() { printf '\033[32m%s\033[0m\n' "$*"; }
-yellow(){ printf '\033[33m%s\033[0m\n' "$*"; }
+force_build=0
+for a in "$@"; do [ "$a" = "--build" ] && force_build=1; done
 
-os="$(uname -s)"
+os="$(uname -s)"; arch="$(uname -m)"
 case "$os" in
-  Darwin) platform=macOS ;;
-  Linux)  if grep -qi microsoft /proc/version 2>/dev/null; then platform=WSL2; else platform=Linux; fi ;;
-  MINGW*|MSYS*|CYGWIN*) red "Git Bash / MSYS is not supported: tmux is required. Use WSL2 (see windows/install.ps1)."; exit 1 ;;
-  *) platform="$os" ;;
+  Darwin) platform=macOS; target_os=apple-darwin ;;
+  Linux)  if grep -qi microsoft /proc/version 2>/dev/null; then platform=WSL2; else platform=Linux; fi; target_os=unknown-linux-gnu ;;
+  MINGW*|MSYS*|CYGWIN*) red "Use WSL2 on Windows for now (native Windows support is in progress)."; exit 1 ;;
+  *) red "unsupported OS: $os"; exit 1 ;;
 esac
-echo "qoral installer · $platform"
+case "$arch" in
+  x86_64|amd64) target_arch=x86_64 ;;
+  arm64|aarch64) target_arch=aarch64 ;;
+  *) red "unsupported architecture: $arch"; exit 1 ;;
+esac
+target="$target_arch-$target_os"
+echo "qoral installer · $platform · $target"
 
-# --- node ---
-if ! command -v node >/dev/null 2>&1; then
-  red "node not found."
-  case "$platform" in
-    macOS) echo "  brew install node" ;;
-    *)     echo "  install Node 22.13+ (e.g. https://nodejs.org, mise, nvm, or your package manager)" ;;
-  esac
-  exit 1
-fi
-nodev="$(node -p 'process.versions.node')"
-if ! node -e 'const [a,b]=process.versions.node.split(".").map(Number); process.exit(a>22||(a===22&&b>=13)?0:1)'; then
-  red "node $nodev is too old; need >= 22.13 (built-in node:sqlite)."; exit 1
-fi
-green "node $nodev"
-
-# --- tmux ---
-if ! command -v tmux >/dev/null 2>&1; then
-  red "tmux not found."
-  case "$platform" in
-    macOS) echo "  brew install tmux" ;;
-    *)     echo "  sudo apt install tmux   |   sudo pacman -S tmux   |   sudo dnf install tmux" ;;
-  esac
-  exit 1
-fi
-tmuxv="$(tmux -V | sed 's/[^0-9.]*\([0-9][0-9.]*\).*/\1/')"
-# version compare via node (BSD sort on macOS has no -V)
-if ! node -e 'const [a,b]=process.argv[1].split(".").map(Number); process.exit(a>3||(a===3&&(b||0)>=2)?0:1)' "$tmuxv"; then
-  red "tmux $tmuxv is too old; need >= 3.2."; exit 1
-fi
-green "tmux $tmuxv"
-
-if ! infocmp tmux-256color >/dev/null 2>&1; then
-  yellow "terminfo has no tmux-256color entry; qoral will fall back to screen-256color (fine)."
-  [ "$platform" = macOS ] && echo "  optional fix: brew install ncurses"
-fi
-
-# --- link ---
-if [ -n "${QORAL_BIN_DIR:-}" ]; then
-  dest_dir="$QORAL_BIN_DIR"
-elif [ -d "$HOME/.local/bin" ]; then
-  dest_dir="$HOME/.local/bin"
-elif [ "$platform" = macOS ] && [ -w /usr/local/bin ]; then
-  dest_dir=/usr/local/bin
-elif [ "$platform" = macOS ] && [ -w /opt/homebrew/bin ]; then
-  dest_dir=/opt/homebrew/bin
-else
-  dest_dir="$HOME/.local/bin"
-fi
+# --- destination ---
+if [ -n "${QORAL_BIN_DIR:-}" ]; then dest_dir="$QORAL_BIN_DIR"
+elif [ -d "$HOME/.local/bin" ]; then dest_dir="$HOME/.local/bin"
+elif [ "$platform" = macOS ] && [ -w /opt/homebrew/bin ]; then dest_dir=/opt/homebrew/bin
+elif [ "$platform" = macOS ] && [ -w /usr/local/bin ]; then dest_dir=/usr/local/bin
+else dest_dir="$HOME/.local/bin"; fi
 mkdir -p "$dest_dir"
-chmod +x "$bin"
-ln -sfn "$bin" "$dest_dir/qoral"
-green "linked $dest_dir/qoral -> $bin"
+
+here="$(cd "$(dirname "$0")" 2>/dev/null && pwd || true)"
+in_clone=0; [ -n "$here" ] && [ -f "$here/Cargo.toml" ] && grep -q '^name = "qoral"' "$here/Cargo.toml" && in_clone=1
+
+installed=0
+
+# --- 1. prebuilt release ---
+if [ "$force_build" = 0 ]; then
+  if command -v curl >/dev/null 2>&1; then
+    ver="${QORAL_VERSION:-}"
+    if [ -z "$ver" ]; then
+      ver="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1 || true)"
+    fi
+    if [ -n "$ver" ]; then
+      url="https://github.com/$REPO/releases/download/$ver/qoral-$ver-$target.tar.gz"
+      tmp="$(mktemp -d)"
+      if curl -fsSL "$url" -o "$tmp/qoral.tar.gz" 2>/dev/null; then
+        tar -xzf "$tmp/qoral.tar.gz" -C "$tmp"
+        bin="$(find "$tmp" -type f -name qoral | head -1)"
+        if [ -n "$bin" ]; then
+          install -m 755 "$bin" "$dest_dir/qoral"
+          green "installed prebuilt qoral $ver -> $dest_dir/qoral"
+          installed=1
+        fi
+      else
+        yellow "no prebuilt binary for $target at $ver (or offline); falling back to a local build"
+      fi
+      rm -rf "$tmp"
+    else
+      yellow "could not determine the latest release; falling back to a local build"
+    fi
+  fi
+fi
+
+# --- 2. build from source ---
+if [ "$installed" = 0 ]; then
+  if ! command -v cargo >/dev/null 2>&1; then
+    red "cargo (Rust) not found and no prebuilt binary was available."
+    echo "  install Rust:  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+    [ "$platform" = macOS ] && echo "  or:            brew install rust"
+    echo "  then re-run this script."
+    exit 1
+  fi
+  if [ "$in_clone" = 1 ]; then
+    echo "building from source in $here (release profile; a few minutes the first time)…"
+    (cd "$here" && cargo build --release --quiet)
+    install -m 755 "$here/target/release/qoral" "$dest_dir/qoral"
+    green "built and installed -> $dest_dir/qoral"
+  else
+    echo "installing from git with cargo…"
+    cargo install --quiet --git "https://github.com/$REPO" --locked qoral --root "$(dirname "$dest_dir")" 2>/dev/null || cargo install --git "https://github.com/$REPO" qoral --root "$(dirname "$dest_dir")"
+    green "installed via cargo -> $dest_dir/qoral"
+  fi
+fi
 
 case ":$PATH:" in
   *":$dest_dir:"*) ;;
   *) yellow "$dest_dir is not on your PATH. Add to your shell rc:"; echo "  export PATH=\"$dest_dir:\$PATH\"" ;;
 esac
 
-# --- agents ---
 echo
 echo "agent CLIs:"
 for h in claude codex agy gemini; do
   if command -v "$h" >/dev/null 2>&1; then green "  $h"; else yellow "  $h (not found)"; fi
 done
-
 echo
 case "$platform" in
   macOS) echo "Tip: make Option send Meta so Alt chords work (Terminal.app: Keyboard → Use Option as Meta key; iTerm2: Left Option → Esc+)." ;;
