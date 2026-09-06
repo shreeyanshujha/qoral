@@ -1,0 +1,10 @@
+{
+  "name": "agora",
+  "version": "0.1.0",
+  "description": "Terminal workspace that runs many coding agents (Claude Code, Codex, Gemini CLI) side by side and lets them talk to each other.",
+  "type": "module",
+  "bin": { "agora": "./bin/agora.js" },
+  "engines": { "node": ">=22.13" },
+  "license": "MIT",
+  "private": true
+}
