@@ -2,7 +2,7 @@
 
 Many coding agents, one terminal, they talk to each other, and every session leaves documentation behind.
 
-agora is a Linux terminal workspace for running several AI coding agents side by side: Claude Code, OpenAI Codex, and Gemini CLI, in any mix, across any projects. A sidebar lists every agent with live status; the main pane shows whichever agent you select at full terminal fidelity. Every agent gets an `agora` MCP server so agents can message each other, broadcast, wait for replies, delegate by spawning sub-agents, and message you. When a session ends it is summarized into a per-project knowledge base that every future agent in that project receives.
+agora is a Linux terminal workspace for running several AI coding agents side by side: Claude Code, OpenAI Codex, Google Antigravity CLI (`agy`), and Gemini CLI, in any mix, across any projects. A sidebar lists every agent with live status; the main pane shows whichever agent you select at full terminal fidelity. Every agent gets an `agora` MCP server so agents can message each other, broadcast, wait for replies, delegate by spawning sub-agents, and message you. When a session ends it is summarized into a per-project knowledge base that every future agent in that project receives.
 
 Zero dependencies beyond Node ≥ 22.13 and tmux ≥ 3.2, which are already on this machine.
 
@@ -71,9 +71,20 @@ agora stop                         # tear everything down
 
 Status glyphs: `●` idle at prompt · `◐` working · `!` needs you (permission, trust or login dialog) · `✎` documenting · `○` exited.
 
+## Supported harnesses
+
+| harness | command | MCP wiring | identity | permission pre-approval |
+|---|---|---|---|---|
+| `claude` | Claude Code | `--mcp-config` per agent | `--agent` arg | `--allowedTools mcp__agora` |
+| `codex` | OpenAI Codex | `-c mcp_servers.agora...` per agent | `--agent` arg | follows your Codex approval policy |
+| `agy` | Google Antigravity CLI | global `~/.gemini/config/mcp_config.json`, merged idempotently | `AGORA_AGENT` env (agy passes env through) | `mcp(agora/<tool>)` rules merged into `~/.gemini/antigravity-cli/settings.json` |
+| `gemini` | Gemini CLI | per-agent system-settings file via `GEMINI_CLI_SYSTEM_SETTINGS_PATH` | `--agent` arg | `trust: true` on the server |
+
+agy has no per-session MCP flag and no system-prompt flag, so agora registers the server once in your agy config (and pre-approves its tools) and sends the agent's briefing as the initial prompt. Both edits are additive and idempotent; `agy mcp list` shows the entry.
+
 ## How agents talk
 
-Each agent is launched with an `agora` MCP server (Claude via `--mcp-config`, Codex via `-c mcp_servers.agora...`, Gemini via a system-settings file). Tools:
+Each agent is launched with an `agora` MCP server. Tools:
 
 | tool | purpose |
 |---|---|
@@ -102,23 +113,23 @@ Every session leaves knowledge behind, per project, in a `.agora/` folder inside
     2026-09-06-1458-ada.md   one note per finished session: summary, changes, decisions, learnings, open threads
 ```
 
-**How it happens.** When an agent exits, or you kill it, agora collects the session transcript and asks a headless model to write the session note and re-merge the digest. The transcript comes from the harness's own session file when available (Claude Code's JSONL, Codex's rollout, Gemini's chat file), else from a raw output log agora taps from the pane, else from tmux scrollback. Sessions that are too short to say anything are skipped.
+**How it happens.** When an agent exits, or you kill it, agora collects the session transcript and asks a headless model to write the session note and re-merge the digest. The transcript comes from the harness's own session file when available (Claude Code's JSONL, Codex's rollout, readable text pulled from Antigravity's conversation database, Gemini's chat file), else from a raw output log agora taps from the pane, else from tmux scrollback. Sessions that are too short to say anything are skipped.
 
 **How it flows back.** Every new agent in that directory gets the digest, plus the titles of recent notes, appended to its system prompt. Agents can also add facts live with `agora_remember(text)`, and read everything with `agora_knowledge()`.
 
 **Commands and keys.** `agora notes [dir]` prints a project's digest and note list. `agora document <name>` snapshots a running agent into a note without stopping it. In the sidebar, `o` opens the selected agent's project digest in `$EDITOR`. `agora kill <name> --no-docs` skips documentation.
 
-**Summarizer.** Defaults to the first of `claude`, `codex`, `gemini` found on PATH, run headless with no tools and a plain writer system prompt. Configure in `~/.local/share/agora/config.json`:
+**Summarizer.** Defaults to the first of `claude`, `codex`, `gemini`, `agy` found on PATH, run headless with no tools and a plain writer system prompt. Configure in `~/.local/share/agora/config.json`:
 
 ```json
 { "summarizer": "auto", "model": null, "document_sessions": true }
 ```
 
-`summarizer` accepts `auto`, `claude`, `codex`, `gemini`, or `none`. `model` is passed through to the CLI. Env overrides: `AGORA_SUMMARIZER`, `AGORA_SUMMARIZER_MODEL`. Commit `.agora/` if you want the knowledge shared with your team, or add it to `.gitignore` to keep it local.
+`summarizer` accepts `auto`, `claude`, `codex`, `gemini`, `agy`, or `none`. `model` is passed through to the CLI. Env overrides: `AGORA_SUMMARIZER`, `AGORA_SUMMARIZER_MODEL`. Commit `.agora/` if you want the knowledge shared with your team, or add it to `.gitignore` to keep it local.
 
 ## Notes and limits
 
-- **First run per project**: Claude Code asks whether you trust the folder, Codex may ask you to sign in, Gemini may ask about tool permissions. agora flags these as `!` so you can answer them.
+- **First run per project**: Claude Code and agy ask whether you trust the folder, Codex may ask you to sign in, Gemini may ask about tool permissions. agora flags these as `!` so you can answer them.
 - **Status is heuristic**: it reads the last screenful of each pane. Unusual prompts may briefly show as "working".
 - **Alt chords** are bound in tmux's root key table and take precedence over the same chords inside agents.
 - Everything runs on a private tmux socket (`-L agora`), so your own tmux sessions and config are untouched.
