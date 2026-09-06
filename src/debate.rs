@@ -81,7 +81,7 @@ fn debater_brief(name: &str, persona: &str, question: &str, cwd: &Path, particip
         "You are \"{name}\", one of {n} participants ({all}) in a structured debate run by \"{mod_}\". The moderator is an automated process on the qoral bus, not a person: it only reads messages sent to it and relays positions between participants.\n\n\
 QUESTION: {question}\n\n\
 YOUR PERSPECTIVE: {persona}\n\n\
-Ground every claim in this project ({cwd}): read the relevant files first with your file-reading tools (avoid shell commands; they may block on a permission prompt nobody is watching). Do NOT edit, create or delete any files during the debate.\n\n\
+Ground every claim in this project ({cwd}): read the relevant files first with your file-reading tools, and stay inside that directory (reading elsewhere, or running shell commands, may block on a permission prompt nobody is watching). Do NOT edit, create or delete any files during the debate.\n\n\
 PROTOCOL ({rounds} rounds max):\n\
 1. Investigate briefly, then send your opening position with qoral_send(to=\"{mod_}\"): at most 250 words, concrete, citing files where relevant. End the message with exactly these two lines:\n\
    STANCE: <one-line summary of the approach you advocate>\n\
