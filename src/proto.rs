@@ -32,6 +32,8 @@ pub enum ClientMsg {
     Focus { name: String },
     /// Write a session note for a running agent now (snapshot; the agent keeps running).
     Document { name: String },
+    /// The agent's visible screen as plain text.
+    Screen { name: String },
     ListAgents,
     Shutdown,
     Ping,
@@ -107,6 +109,7 @@ pub enum DaemonMsg {
     Spawned { name: String, notices: Vec<String> },
     Focused { name: String },
     Error { message: String },
+    Text { text: String },
     Ok,
     Pong,
     Shutdown,

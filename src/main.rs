@@ -70,6 +70,8 @@ enum Cmd {
     },
     /// Show an agent in attached clients
     Focus { name: String },
+    /// Print an agent's current screen as text (for scripts, tests and debugging)
+    Screen { name: String },
     /// Type a line into an agent's terminal (text, then Enter), for scripts and tests
     Type {
         name: String,
@@ -116,9 +118,8 @@ enum Cmd {
     },
     /// Several agents argue a question, then a decision document is written
     Debate {
-        /// The question to debate
-        #[arg(trailing_var_arg = true)]
-        question: Vec<String>,
+        /// The question to debate (quote it)
+        question: String,
         #[arg(long)]
         dir: Option<String>,
         /// Comma-separated harnesses for the participants (2-4), e.g. claude,agy,codex
@@ -235,6 +236,14 @@ async fn async_main(cli: Cli) -> Result<()> {
             }
             Ok(())
         }
+        Some(Cmd::Screen { name }) => match ctl::request(ClientMsg::Screen { name }, false).await? {
+            DaemonMsg::Text { text } => {
+                print!("{text}");
+                Ok(())
+            }
+            DaemonMsg::Error { message } => bail!("{message}"),
+            other => bail!("unexpected reply: {other:?}"),
+        },
         Some(Cmd::Type { name, text }) => {
             let line = text.join(" ");
             let mut stream = match ctl::try_connect().await {
@@ -332,9 +341,8 @@ async fn async_main(cli: Cli) -> Result<()> {
             other => bail!("unknown theme action \"{other}\" (list | init <name> [--from <builtin>] [--force])"),
         },
         Some(Cmd::Debate { question, dir, agents, rounds, timeout, build, keep }) => {
-            let q = question.join(" ");
             let opts = debate::DebateOpts {
-                question: q,
+                question,
                 cwd: dir.map(|d| paths::expand_home(&d)).unwrap_or(std::env::current_dir()?),
                 harnesses: agents.map(|a| a.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()).unwrap_or_default(),
                 rounds: rounds.max(1),

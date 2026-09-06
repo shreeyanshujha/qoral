@@ -300,6 +300,11 @@ impl State {
             }
             if a.exited_at.is_none() {
                 if let Some(code) = a.poll_exit() {
+                    if a.harness == "cmd" {
+                        // editor / debate windows vanish when their command ends
+                        let _ = self.kill_agent(&name, false);
+                        continue;
+                    }
                     a.banner(&format!("[qoral] agent \"{name}\" exited ({code})."));
                     self.idle_since.remove(&name);
                     if documentable(a) {
@@ -513,6 +518,14 @@ fn handle_msg(msg: ClientMsg, id: u64, state: &Shared, tx: &mpsc::UnboundedSende
                 }
                 Err(e) => {
                     let _ = tx.send(DaemonMsg::Error { message: e.to_string() });
+                }
+            },
+            ClientMsg::Screen { name } => match s.agents.get(&name) {
+                Some(a) => {
+                    let _ = tx.send(DaemonMsg::Text { text: a.screen_text() });
+                }
+                None => {
+                    let _ = tx.send(DaemonMsg::Error { message: format!("no agent named \"{name}\"") });
                 }
             },
             ClientMsg::Document { name } => match s.document_agent(&name) {
