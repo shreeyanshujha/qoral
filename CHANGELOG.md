@@ -6,6 +6,9 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Theming: built-in themes (`default`, `mono`, `nord`, `gruvbox`, `dracula`), user theme files under `~/.local/share/qoral/themes/` or `~/.config/qoral/themes/`, and inline `colors`/`glyphs` overrides in `config.json`. Colors accept names, 256-color indices, or hex (truecolor). `qoral theme` previews; `qoral theme init` scaffolds. Both the sidebar and the tmux status bar follow the theme.
+
 ## [0.2.0] - 2026-09-06
 
 First public beta. Linux and macOS.

@@ -146,6 +146,35 @@ Flags: `--agents claude,agy,codex` (2 to 4, repeats allowed), `--rounds 3`, `--t
 
 In a live run, two Claude participants and one agy participant argued a testing-structure question for two rounds, the minimalist and pragmatist converged with explicit concessions, the decision document cited the project's zero-dependency rule and Node version from the knowledge digest, and the builder implemented it with passing tests. Participants stuck on a permission prompt are flagged in the moderator log and on the bus, since a silent participant is the main way a round runs to its timeout.
 
+## Theming
+
+Colors and glyphs are configurable. Preview what's available:
+
+```sh
+qoral theme            # list themes and show the active palette
+```
+
+Built-in themes: `default`, `mono`, `nord`, `gruvbox`, `dracula`. Pick one in `~/.local/share/qoral/config.json`:
+
+```json
+{ "theme": "gruvbox" }
+```
+
+or per-run with `QORAL_THEME=nord qoral`. Make your own:
+
+```sh
+qoral theme init mine --from nord     # writes ~/.local/share/qoral/themes/mine.json
+# edit it, then set  "theme": "mine"
+```
+
+A theme file has two objects, `colors` and `glyphs`; anything you omit inherits from `default`. Colors accept a name (`"red"`, `"brightblue"`), a 256-color index (`214`), or a hex string (`"#fabd2f"`, rendered as truecolor where the terminal supports it). You can also override single roles inline without a theme file:
+
+```json
+{ "theme": "nord", "colors": { "accent": "#ff6ac1" }, "glyphs": { "idle": "•", "working": ["⠋","⠙","⠹","⠸"] } }
+```
+
+Roles: `accent`, `idle`, `working`, `attention`, `documenting`, `moderating`, `exited`, `text`, `dim`, `border`, `selection`, `mail`, the harness colors `claude`/`codex`/`agy`/`gemini`/`moderator`, and the status-bar colors `bar_fg`/`bar_bg`/`bar_key`. Glyphs cover each status (`working` is an array of spinner frames) plus `cursor`, `unread`, and `mail`. Both the sidebar and the tmux status bar follow the theme.
+
 ## Living documentation
 
 Every session leaves knowledge behind, per project, in a `.qoral/` folder inside the project directory:
@@ -204,6 +233,7 @@ lib/bus.js       status detection + message delivery loop
 lib/status.js    pane-text heuristics
 lib/knowledge.js living docs: session notes, KNOWLEDGE.md digest, summarizer
 lib/debate.js    moderated multi-agent debates → .qoral/decisions/
+lib/theme.js     themes: built-ins, color parsing, user theme files
 lib/doctor.js    `qoral doctor` environment checks
 test/            node:test suite; fixtures/claude is a fake harness so CI needs no real agent
 install.sh       Linux / macOS / WSL installer
