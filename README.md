@@ -4,7 +4,7 @@ Many coding agents, one terminal, they talk to each other, and every session lea
 
 agora is a Linux terminal workspace for running several AI coding agents side by side: Claude Code, OpenAI Codex, Google Antigravity CLI (`agy`), and Gemini CLI, in any mix, across any projects. A sidebar lists every agent with live status; the main pane shows whichever agent you select at full terminal fidelity. Every agent gets an `agora` MCP server so agents can message each other, broadcast, wait for replies, delegate by spawning sub-agents, and message you. When a session ends it is summarized into a per-project knowledge base that every future agent in that project receives.
 
-Zero dependencies beyond Node ≥ 22.13 and tmux ≥ 3.2, which are already on this machine.
+Zero dependencies beyond Node ≥ 22.13 and tmux ≥ 3.2. Runs on Linux, macOS, and Windows via WSL2, in any terminal.
 
 ```
 ┌─ agora ──────────────┬──────────────────────────────────────────────────┐
@@ -24,9 +24,34 @@ Zero dependencies beyond Node ≥ 22.13 and tmux ≥ 3.2, which are already on t
 ## Install
 
 ```sh
-ln -s ~/Projects/active/agora/bin/agora.js ~/.local/bin/agora
-agora help
+git clone https://github.com/shreeyanshujha/agora.git
+cd agora && ./install.sh     # checks node/tmux, links `agora` onto your PATH
+agora doctor                 # verifies everything, prints platform tips
 ```
+
+`npm install -g .` in the clone works too. There is nothing to build and no `node_modules`.
+
+## Platforms
+
+| platform | how | notes |
+|---|---|---|
+| **Linux** | `./install.sh` | Any terminal: Foot, Alacritty, Kitty, GNOME Terminal, Konsole, xterm. agora draws inside tmux, so the terminal only needs UTF-8 and 256 colors. |
+| **macOS** | `brew install node tmux`, then `./install.sh` | Alt chords need Option to send Meta: Terminal.app → Settings → Profiles → Keyboard → *Use Option as Meta key*; iTerm2 → Profiles → Keys → *Left Option key: Esc+*. Without it, use the sidebar keys. macOS's terminfo lacks `tmux-256color`; agora detects that and uses `screen-256color`. |
+| **Windows** | WSL2 + `windows\install.ps1` | tmux has no native Windows build, so agora runs inside WSL2. The PowerShell installer runs `install.sh` inside your distro and puts an `agora` command on your Windows PATH that forwards to WSL, so `agora`, `agora spawn …`, `agora debate …` work from PowerShell, cmd, and Windows Terminal. Windows Terminal binds Alt+arrows to its own panes; use `Alt+h` / `Alt+l` in agora or unbind them. Keep projects on the Linux filesystem, not `/mnt/c`, for speed. |
+
+Windows, step by step:
+
+```powershell
+wsl --install                       # once; reboot
+# inside WSL: install node >= 22.13 and tmux, e.g. on Ubuntu:
+#   sudo apt install -y tmux && curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt install -y nodejs
+#   git clone https://github.com/shreeyanshujha/agora.git ~/agora
+# back in PowerShell:
+powershell -ExecutionPolicy Bypass -File \\wsl$\Ubuntu\home\<you>\agora\windows\install.ps1
+agora doctor
+```
+
+The agent CLIs (Claude Code, Codex, agy, Gemini) also have to be installed inside WSL, since that's where agora launches them.
 
 ## Use
 
@@ -168,6 +193,9 @@ lib/bus.js       status detection + message delivery loop
 lib/status.js    pane-text heuristics
 lib/knowledge.js living docs: session notes, KNOWLEDGE.md digest, summarizer
 lib/debate.js    moderated multi-agent debates → .agora/decisions/
+lib/doctor.js    `agora doctor` environment checks
+install.sh       Linux / macOS / WSL installer
+windows/         PowerShell + cmd launchers and installer (run agora inside WSL2)
 lib/transcript.js transcript collection (Claude JSONL / Codex rollout / Gemini chat / raw log / scrollback)
 lib/ui.js        sidebar TUI
 lib/db.js        SQLite (node:sqlite)

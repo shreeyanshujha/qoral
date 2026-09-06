@@ -3,6 +3,31 @@
 process.removeAllListeners('warning');
 process.on('warning', () => {});
 
+// ---- platform gate ----------------------------------------------------------
+const [maj, min] = process.versions.node.split('.').map(Number);
+if (maj < 22 || (maj === 22 && min < 13)) {
+  process.stderr.write(`agora: Node ${process.versions.node} is too old; need ≥ 22.13 (for the built-in node:sqlite).\n`);
+  process.exit(1);
+}
+
+if (process.platform === 'win32' && !process.argv.slice(2).some((a) => ['doctor', 'help', '--help', '-h', 'version', '--version', '-v'].includes(a))) {
+  process.stderr.write(
+    [
+      'agora: native Windows is not supported, because agora multiplexes agents with tmux and tmux has no Windows build.',
+      '',
+      'Run it inside WSL2 instead (Windows Terminal and PowerShell both work with it):',
+      '  1. wsl --install                       # once; then reboot',
+      '  2. inside WSL: install node >= 22.13 and tmux, clone agora, run ./install.sh',
+      '  3. from PowerShell: powershell -ExecutionPolicy Bypass -File windows\\install.ps1',
+      '     -> gives you an `agora` command in PowerShell that runs inside WSL',
+      '',
+      'Run `agora doctor` for details.',
+      '',
+    ].join('\n'),
+  );
+  process.exit(1);
+}
+
 const { main } = await import('../lib/cli.js');
 main(process.argv.slice(2)).catch((err) => {
   process.stderr.write(`agora: ${err.message}\n`);
