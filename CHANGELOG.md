@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-07
+
 ### Added
 - `qoral debate --options`: participants develop distinct candidates instead of converging; the write-up is a per-option comparison with an optional recommendation, linked from KNOWLEDGE.md as undecided and announced on the bus as `OPTIONS:`.
 - `qoral build <decisions-file> [--option N]`: spawn a builder for a decision document or for one option of an options document.
