@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-09-07
+
 ### Added
 - OpenCode harness (`opencode`): any provider OpenCode supports (DeepSeek, OpenRouter, local models …). Per-agent config via `OPENCODE_CONFIG` with the qoral MCP server merged into a copy of your `opencode.json`; `"opencode_model"` in qoral's config picks the model; transcripts via `opencode export`. Not seated in debates automatically; use `--agents` or `debate_harnesses`.
 - After an upgrade or rebuild, clients detect that the running daemon is a different build and restart it when no agents are running, instead of failing with protocol errors.
