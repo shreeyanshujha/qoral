@@ -429,7 +429,7 @@ async fn handle_client(stream: UnixStream, state: Shared) {
             }
         }
     });
-    let _ = tx.send(DaemonMsg::Hello { version: env!("CARGO_PKG_VERSION").into(), pid: std::process::id() });
+    let _ = tx.send(DaemonMsg::Hello { version: env!("CARGO_PKG_VERSION").into(), pid: std::process::id(), build: crate::proto::build_id() });
     {
         let s = state.lock().unwrap();
         let _ = tx.send(DaemonMsg::Agents(s.agent_infos()));

@@ -1,7 +1,7 @@
 //! Filesystem locations shared by daemon, client and CLI.
 use std::path::{Path, PathBuf};
 
-pub const HARNESSES: &[&str] = &["claude", "codex", "agy", "gemini"];
+pub const HARNESSES: &[&str] = &["claude", "codex", "agy", "gemini", "opencode"];
 
 pub fn home() -> PathBuf {
     if let Ok(p) = std::env::var("QORAL_HOME") {

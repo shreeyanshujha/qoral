@@ -2,7 +2,7 @@
 
 Many coding agents, one terminal. They talk to each other, argue out decisions, and every session leaves documentation behind.
 
-qoral is a terminal workspace for running several AI coding agents side by side: Claude Code, OpenAI Codex, Google Antigravity CLI (`agy`), and Gemini CLI, in any mix, across any projects. A sidebar lists every agent with live status; the main pane shows whichever agent you select, rendered by a real terminal emulator. Every agent gets a `qoral` MCP server so agents can message each other, broadcast, wait for replies, delegate by spawning sub-agents, and message you. When a session ends it is summarized into a per-project knowledge base that every future agent in that project receives. And when you have a question, three agents can debate it and hand you a decision document.
+qoral is a terminal workspace for running several AI coding agents side by side: Claude Code, OpenAI Codex, Google Antigravity CLI (`agy`), Gemini CLI, and OpenCode (which brings DeepSeek, OpenRouter, local models and any other provider), in any mix, across any projects. A sidebar lists every agent with live status; the main pane shows whichever agent you select, rendered by a real terminal emulator. Every agent gets a `qoral` MCP server so agents can message each other, broadcast, wait for replies, delegate by spawning sub-agents, and message you. When a session ends it is summarized into a per-project knowledge base that every future agent in that project receives. And when you have a question, three agents can debate it and hand you a decision document.
 
 One Rust binary. No tmux, no Node, no runtime dependencies beyond the agent CLIs you already use.
 
@@ -96,6 +96,9 @@ Status glyphs: `●` idle at prompt · `◐` working · `!` needs you (permissio
 | `codex` | OpenAI Codex | `-c mcp_servers.qoral...` per agent | `--agent` arg | follows your Codex approval policy |
 | `agy` | Google Antigravity CLI | global `~/.gemini/config/mcp_config.json`, merged idempotently | `QORAL_AGENT` env (agy passes env through) | `mcp(qoral/<tool>)` rules merged into `~/.gemini/antigravity-cli/settings.json` |
 | `gemini` | Gemini CLI | per-agent system-settings file via `GEMINI_CLI_SYSTEM_SETTINGS_PATH` | `--agent` arg | `trust: true` on the server |
+| `opencode` | OpenCode (any provider: DeepSeek, OpenRouter, local models …) | per-agent copy of your `opencode.json` with the server merged in, via `OPENCODE_CONFIG` | `--agent` arg | follows your OpenCode permission config |
+
+OpenCode is how you bring in providers the other CLIs don't cover. Set the model once in qoral's config, `"opencode_model": "deepseek/deepseek-chat"`, or leave it unset to use OpenCode's own default. Your OpenCode credentials and config are untouched: each agent gets a private copy of `opencode.json` with the qoral MCP server added. Debates don't seat OpenCode automatically, since its model is whatever you configured; include it with `--agents claude,opencode` or `debate_harnesses` when you want it.
 
 agy has no per-session MCP flag and no system-prompt flag, so qoral registers the server once in your agy config (and pre-approves its tools) and sends the agent's briefing as the initial prompt. Both edits are additive and idempotent, and qoral tells you when it makes them.
 
@@ -168,7 +171,7 @@ Every session leaves knowledge behind, per project, in a `.qoral/` folder inside
 
 ```json
 { "summarizer": "auto", "model": null, "document_sessions": true, "max_agents": 8, "theme": "default",
-  "debate_harnesses": [], "debate_count": 3 }
+  "debate_harnesses": [], "debate_count": 3, "opencode_model": null }
 ```
 
 `summarizer` accepts `auto`, `claude`, `codex`, `gemini`, `agy`, or `none`. Env overrides: `QORAL_SUMMARIZER`, `QORAL_SUMMARIZER_MODEL`. Commit `.qoral/` to share the knowledge with your team, or add it to `.gitignore` to keep it local.

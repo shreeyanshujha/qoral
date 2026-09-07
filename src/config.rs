@@ -15,11 +15,22 @@ pub struct Config {
     pub debate_harnesses: Vec<String>,
     /// Default number of debate participants when neither --count nor --agents is given.
     pub debate_count: usize,
+    /// Model for OpenCode agents as provider/model, e.g. "deepseek/deepseek-chat". None = OpenCode's default.
+    pub opencode_model: Option<String>,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Self { summarizer: "auto".into(), model: None, document_sessions: true, max_agents: 8, theme: "default".into(), debate_harnesses: vec![], debate_count: 3 }
+        Self {
+            summarizer: "auto".into(),
+            model: None,
+            document_sessions: true,
+            max_agents: 8,
+            theme: "default".into(),
+            debate_harnesses: vec![],
+            debate_count: 3,
+            opencode_model: None,
+        }
     }
 }
 

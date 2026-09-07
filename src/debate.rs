@@ -47,6 +47,13 @@ pub fn harness_usable(h: &str) -> bool {
         // Codex without credentials sits at its sign-in screen forever. Signed in via ChatGPT (auth.json)
         // or via an API key in the environment both count.
         "codex" => home.join(".codex/auth.json").exists() || std::env::var("OPENAI_API_KEY").map(|v| !v.is_empty()).unwrap_or(false),
+        // OpenCode needs a provider: credentials file, or a provider key in the environment.
+        "opencode" => {
+            dirs::data_local_dir().map(|d| d.join("opencode/auth.json").exists()).unwrap_or(false)
+                || ["DEEPSEEK_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY"]
+                    .iter()
+                    .any(|k| std::env::var(k).map(|v| !v.is_empty()).unwrap_or(false))
+        }
         _ => true,
     }
 }
@@ -57,10 +64,12 @@ pub fn harness_pool() -> Result<Vec<String>> {
     let pool: Vec<String> = if !cfg.debate_harnesses.is_empty() {
         cfg.debate_harnesses.iter().filter(|h| knowledge::which(h)).cloned().collect()
     } else {
+        // opencode is deliberately not auto-seated (its model is whatever the user configured, which may
+        // not suit a debate); use --agents or debate_harnesses to include it.
         ["claude", "agy", "gemini", "codex"].into_iter().filter(|h| harness_usable(h)).map(|s| s.to_string()).collect()
     };
     if pool.is_empty() {
-        bail!("no usable agent CLIs found (install claude/agy/gemini/codex, or set debate_harnesses in config.json)");
+        bail!("no usable agent CLIs found (install claude/agy/gemini/codex/opencode, or set debate_harnesses in config.json)");
     }
     Ok(pool)
 }

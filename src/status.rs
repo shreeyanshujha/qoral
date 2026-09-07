@@ -6,14 +6,14 @@ use std::sync::LazyLock;
 static EXITED: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"\[qoral\] agent "[^"]+" exited"#).unwrap());
 static DOCUMENTING: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[qoral\] documenting session").unwrap());
 static WORKING: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)(esc to interrupt|esc to cancel|ctrl\+c to (cancel|interrupt|stop)|Thinking\.\.\.|Working\.\.\.|Generating\.\.\.)").unwrap()
+    Regex::new(r"(?i)(esc to interrupt|esc interrupt|esc to cancel|ctrl\+c to (cancel|interrupt|stop)|Thinking\.\.\.|Working\.\.\.|Generating\.\.\.)").unwrap()
 });
 static ATTENTION: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)(Do you want to|Allow (this|execution|once|always)|Would you like to|\(y/n\)|\[Y/n\]|\[y/N\]|Yes, (allow|proceed|and don't ask|I trust|and always)|Yes, run|approve this|Enter to confirm|Press Enter to continue|trust this folder|trust the contents|Select (an option|login method)|Paste (your|the) (code|key)|Sign in|Log ?in with|No, exit|Requesting permission)").unwrap()
 });
 static PROMPT_LINE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^[\s│┃|]*[>❯›]\s").unwrap());
 static PROMPT_HINT: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)(\? for shortcuts|Type your message|shift\+tab to cycle|Ctrl\+C to quit|for commands)").unwrap()
+    Regex::new(r"(?i)(\? for shortcuts|Type your message|shift\+tab to cycle|Ctrl\+C to quit|for commands|Ask anything|ctrl\+p commands)").unwrap()
 });
 
 pub fn detect_status(screen: &str) -> &'static str {
@@ -58,5 +58,7 @@ mod tests {
         assert_eq!(detect_status("\n[qoral] agent \"ada\" exited (0)."), "exited");
         assert_eq!(detect_status("\n\n"), "starting");
         assert_eq!(detect_status("⡿ Generating...\n>\nesc to cancel"), "working");
+        assert_eq!(detect_status("┃  Ask anything... \"What is the tech stack?\"\n┃  Build · Big Pickle\n tab agents  ctrl+p commands"), "idle");
+        assert_eq!(detect_status("┃  Build · Big Pickle\n ⬝⬝⬝⬝  esc interrupt        tab agents  ctrl+p commands"), "working");
     }
 }

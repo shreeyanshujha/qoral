@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use tokio::net::UnixStream;
 
 use crate::paths;
-use crate::proto::{read_msg, write_msg, ClientMsg, DaemonMsg};
+use crate::proto::{build_id, read_msg, write_msg, AgentInfo, ClientMsg, DaemonMsg};
 
 pub async fn try_connect() -> Option<UnixStream> {
     UnixStream::connect(paths::socket_path()).await.ok()
@@ -26,11 +26,7 @@ pub fn start_daemon_detached() -> Result<()> {
     Ok(())
 }
 
-/// Connect, starting the daemon if needed.
-pub async fn connect() -> Result<UnixStream> {
-    if let Some(s) = try_connect().await {
-        return Ok(s);
-    }
+async fn start_and_wait() -> Result<UnixStream> {
     let _ = std::fs::remove_file(paths::socket_path());
     start_daemon_detached()?;
     let deadline = Instant::now() + Duration::from_secs(8);
@@ -41,6 +37,54 @@ pub async fn connect() -> Result<UnixStream> {
         }
     }
     bail!("daemon did not come up; see {}", paths::daemon_log().display())
+}
+
+/// Connect, starting the daemon if needed. If a daemon from a different build of qoral is running
+/// (after an upgrade or rebuild) and it has no live agents, it is restarted so the two sides agree
+/// on the protocol. The returned stream has its Hello consumed; the initial Agents list follows.
+pub async fn connect() -> Result<UnixStream> {
+    let mut stream = match try_connect().await {
+        Some(s) => s,
+        None => return start_and_wait().await,
+    };
+    let hello: DaemonMsg = match tokio::time::timeout(Duration::from_secs(3), read_msg(&mut stream)).await {
+        Ok(Ok(m)) => m,
+        _ => {
+            // unresponsive or unreadable daemon: replace it
+            drop(stream);
+            return start_and_wait().await;
+        }
+    };
+    let daemon_build = match &hello {
+        DaemonMsg::Hello { build, .. } => build.clone(),
+        _ => String::new(),
+    };
+    if daemon_build == build_id() {
+        return Ok(stream);
+    }
+    // different build: peek at the agent list; restart only if nothing is running
+    let agents: Vec<AgentInfo> = match tokio::time::timeout(Duration::from_secs(3), read_msg::<_, DaemonMsg>(&mut stream)).await {
+        Ok(Ok(DaemonMsg::Agents(v))) => v,
+        _ => Vec::new(),
+    };
+    let live = agents.iter().filter(|a| a.exited_at.is_none() && a.harness != "moderator").count();
+    if live == 0 {
+        let _ = write_msg(&mut stream, &ClientMsg::Shutdown).await;
+        drop(stream);
+        // give it a moment to exit and release the socket
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            if try_connect().await.is_none() {
+                break;
+            }
+        }
+        return start_and_wait().await;
+    }
+    // agents are running under the old daemon: keep it, but re-request the list we consumed
+    eprintln!("note: the qoral daemon is an older build; it will be replaced when no agents are running (or: qoral stop)");
+    write_msg(&mut stream, &ClientMsg::ListAgents).await?;
+    Ok(stream)
 }
 
 /// Send one request and return the first reply that isn't a routine broadcast.
@@ -65,7 +109,7 @@ pub async fn request(msg: ClientMsg, auto_start: bool) -> Result<DaemonMsg> {
     }
 }
 
-pub async fn list_agents() -> Result<Vec<crate::proto::AgentInfo>> {
+pub async fn list_agents() -> Result<Vec<AgentInfo>> {
     let mut stream = match try_connect().await {
         Some(s) => s,
         None => return Ok(Vec::new()),

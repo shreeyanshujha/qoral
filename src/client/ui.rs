@@ -303,7 +303,7 @@ fn draw_help(f: &mut RFrame, _app: &mut App, area: Rect, p: &Palette) {
         Line::from(vec![Span::styled(" qoral", Style::default().fg(p.accent).add_modifier(Modifier::BOLD)), Span::styled(" help", dim)]),
         Line::styled("─".repeat(area.width as usize), Style::default().fg(p.border)),
         sec("sidebar"),
-        k("n", "new agent: claude/codex/agy/gemini"),
+        k("n", "new agent: claude/codex/agy/gemini/opencode"),
         k("⏎ / →", "show selected agent on the right"),
         k("j/k ↑/↓", "move selection"),
         k("m", "message selected agent"),

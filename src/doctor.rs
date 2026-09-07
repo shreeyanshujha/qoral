@@ -58,7 +58,7 @@ pub async fn run() -> i32 {
     // agent CLIs
     lines.push(String::new());
     lines.push(format!("{B}agent CLIs{X}"));
-    let labels = [("claude", "Claude Code"), ("codex", "OpenAI Codex"), ("agy", "Antigravity (agy)"), ("gemini", "Gemini CLI")];
+    let labels = [("claude", "Claude Code"), ("codex", "OpenAI Codex"), ("agy", "Antigravity (agy)"), ("gemini", "Gemini CLI"), ("opencode", "OpenCode (any provider, e.g. DeepSeek)")];
     let mut found = 0;
     for (h, label) in labels {
         if knowledge::which(h) {

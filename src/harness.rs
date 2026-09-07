@@ -134,6 +134,36 @@ pub fn build_launch(harness: &str, name: &str, cwd: &Path, prompt: Option<&str>)
             notices.extend(ensure_agy_integration(&exe)?);
             Ok(Launch { argv: vec!["agy".into(), "-i".into(), full_prompt], env: vec![], notices, session_id: None })
         }
+        "opencode" => {
+            // OpenCode reads OPENCODE_CONFIG instead of ~/.config/opencode/opencode.json, so give the agent a
+            // copy of the user's config with the qoral MCP server merged in. Credentials live elsewhere
+            // (~/.local/share/opencode/auth.json), so nothing is lost. No system-prompt flag: briefing rides in --prompt.
+            let user_cfg = dirs::config_dir().map(|c| c.join("opencode/opencode.json"));
+            let mut cfg_json: serde_json::Value = user_cfg
+                .as_ref()
+                .and_then(|p| std::fs::read_to_string(p).ok())
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or_else(|| serde_json::json!({ "$schema": "https://opencode.ai/config.json" }));
+            if !cfg_json.is_object() {
+                cfg_json = serde_json::json!({ "$schema": "https://opencode.ai/config.json" });
+            }
+            if cfg_json.get("mcp").map(|m| !m.is_object()).unwrap_or(true) {
+                cfg_json["mcp"] = serde_json::json!({});
+            }
+            let mut command = vec![exe.clone()];
+            command.extend(mcp_args.iter().cloned());
+            cfg_json["mcp"]["qoral"] = serde_json::json!({ "type": "local", "command": command, "enabled": true });
+            let cfg = dir.join("opencode.json");
+            std::fs::write(&cfg, serde_json::to_string_pretty(&cfg_json)?)?;
+            let mut argv = vec!["opencode".to_string()];
+            if let Some(m) = crate::config::load().opencode_model.filter(|m| !m.trim().is_empty()) {
+                argv.push("--model".into());
+                argv.push(m);
+            }
+            argv.push("--prompt".into());
+            argv.push(full_prompt);
+            Ok(Launch { argv, env: vec![("OPENCODE_CONFIG".into(), cfg.display().to_string())], notices, session_id: None })
+        }
         "gemini" => {
             let cfg = dir.join("gemini-settings.json");
             let mut j = mcp_json.clone();
@@ -146,7 +176,7 @@ pub fn build_launch(harness: &str, name: &str, cwd: &Path, prompt: Option<&str>)
                 session_id: None,
             })
         }
-        other => bail!("unknown harness \"{other}\" (claude | codex | agy | gemini)"),
+        other => bail!("unknown harness \"{other}\" (claude | codex | agy | gemini | opencode)"),
     }
 }
 

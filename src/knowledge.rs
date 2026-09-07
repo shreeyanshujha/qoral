@@ -326,6 +326,65 @@ pub fn agy_transcript(cwd: &Path, started_at: i64) -> Option<Transcript> {
     best.map(|(_, t)| t)
 }
 
+/// OpenCode keeps sessions in its own database; `opencode export <id>` gives JSON. Pick the newest
+/// session for the project directory and render its messages.
+pub fn opencode_transcript(cwd: &Path, started_at: i64) -> Option<Transcript> {
+    let list = Command::new("opencode").arg("session").arg("list").current_dir(cwd).output().ok()?;
+    let text = String::from_utf8_lossy(&list.stdout);
+    // session ids look like ses_xxx; take the first one mentioned (newest first)
+    let id_re = regex::Regex::new(r"\b(ses_[A-Za-z0-9]+)\b").ok()?;
+    let id = id_re.captures(&text)?.get(1)?.as_str().to_string();
+    let out = Command::new("opencode").args(["export", &id]).current_dir(cwd).output().ok()?;
+    let json: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
+    // sanity: session should be from this run
+    if let Some(t) = json.pointer("/info/time/created").and_then(|v| v.as_i64()) {
+        if t < started_at - 60_000 {
+            return None;
+        }
+    }
+    let mut lines = Vec::new();
+    fn walk(v: &serde_json::Value, lines: &mut Vec<String>) {
+        match v {
+            serde_json::Value::Array(a) => a.iter().for_each(|x| walk(x, lines)),
+            serde_json::Value::Object(o) => {
+                let role = o.get("role").and_then(|r| r.as_str()).or_else(|| o.get("info").and_then(|i| i.get("role")).and_then(|r| r.as_str()));
+                if let Some(parts) = o.get("parts").and_then(|p| p.as_array()) {
+                    let r = role.unwrap_or("message").to_uppercase();
+                    for p in parts {
+                        match p.get("type").and_then(|t| t.as_str()) {
+                            Some("text") => {
+                                if let Some(t) = p.get("text").and_then(|t| t.as_str()) {
+                                    if !t.trim().is_empty() {
+                                        lines.push(format!("{r}: {}", t.trim()));
+                                    }
+                                }
+                            }
+                            Some("tool") => {
+                                let name = p.get("tool").and_then(|t| t.as_str()).unwrap_or("tool");
+                                let input = p.pointer("/state/input").map(|i| i.to_string()).unwrap_or_default();
+                                let output = p.pointer("/state/output").and_then(|o| o.as_str()).unwrap_or("");
+                                lines.push(format!("TOOL CALL {name}({})", clip(&input, 600)));
+                                if !output.is_empty() {
+                                    lines.push(format!("TOOL RESULT: {}", clip(output, 800)));
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                } else {
+                    o.values().for_each(|x| walk(x, lines));
+                }
+            }
+            _ => {}
+        }
+    }
+    walk(&json, &mut lines);
+    if lines.is_empty() {
+        return None;
+    }
+    Some(Transcript { source: format!("opencode session {id}"), text: lines.join("\n") })
+}
+
 pub fn raw_log_transcript(path: &Path) -> Option<Transcript> {
     let data = std::fs::read(path).ok()?;
     if data.is_empty() {
@@ -364,6 +423,7 @@ pub fn collect_transcript(s: &SessionInfo) -> Option<Transcript> {
         "codex" => push(codex_transcript(s.cwd, s.started_at)),
         "gemini" => push(gemini_transcript(s.started_at)),
         "agy" => push(agy_transcript(s.cwd, s.started_at)),
+        "opencode" => push(opencode_transcript(s.cwd, s.started_at)),
         _ => {}
     }
     if let Some(p) = s.raw_log {

@@ -5,6 +5,20 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 pub const MAX_FRAME: u32 = 64 * 1024 * 1024;
 
+/// Version plus a stamp of the running executable (size + mtime). Two processes started from the
+/// same binary file agree; a rebuilt or upgraded binary differs, even at the same version number.
+pub fn build_id() -> String {
+    let stamp = std::env::current_exe()
+        .and_then(std::fs::metadata)
+        .ok()
+        .map(|m| {
+            let mtime = m.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs()).unwrap_or(0);
+            format!("{}-{}", m.len(), mtime)
+        })
+        .unwrap_or_default();
+    format!("{}+{stamp}", env!("CARGO_PKG_VERSION"))
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpawnReq {
     pub harness: String,
@@ -103,7 +117,8 @@ pub struct AgentInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DaemonMsg {
-    Hello { version: String, pid: u32 },
+    /// `build` identifies the daemon's executable (version + binary stamp) so clients can notice an upgrade.
+    Hello { version: String, pid: u32, build: String },
     Agents(Vec<AgentInfo>),
     Frame(Frame),
     Spawned { name: String, notices: Vec<String> },

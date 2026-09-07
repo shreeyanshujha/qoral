@@ -141,7 +141,7 @@ impl App {
     fn start_spawn(&mut self) {
         self.mode = Mode::Pick {
             label: "harness?".into(),
-            options: vec![('c', "claude".into()), ('x', "codex".into()), ('a', "agy".into()), ('g', "gemini".into())],
+            options: vec![('c', "claude".into()), ('x', "codex".into()), ('a', "agy".into()), ('g', "gemini".into()), ('o', "opencode".into())],
             pending: Pending::SpawnHarness,
         };
     }

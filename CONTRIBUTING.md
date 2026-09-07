@@ -24,7 +24,7 @@ To try changes against real agents without touching your daily workspace:
 QORAL_HOME=/tmp/qoral-dev ./target/debug/qoral
 ```
 
-Each `QORAL_HOME` gets its own daemon and socket. After rebuilding, `qoral stop` the dev daemon so the next `qoral` starts the new binary.
+Each `QORAL_HOME` gets its own daemon and socket. After rebuilding, the next client notices the daemon is an older build and restarts it if no agents are running; with agents running, `qoral stop` it yourself.
 
 ## Layout
 

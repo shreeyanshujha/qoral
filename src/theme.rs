@@ -33,6 +33,7 @@ pub struct Palette {
     pub codex: Color,
     pub agy: Color,
     pub gemini: Color,
+    pub opencode: Color,
     pub moderator: Color,
     pub bar_fg: Color,
     pub bar_bg: Color,
@@ -67,28 +68,28 @@ fn builtin(name: &str) -> Option<HashMap<&'static str, &'static str>> {
         "default" => &[
             ("accent", "214"), ("idle", "green"), ("working", "yellow"), ("attention", "red"), ("documenting", "cyan"), ("moderating", "cyan"),
             ("exited", "gray"), ("starting", "gray"), ("text", "white"), ("dim", "gray"), ("border", "238"), ("selection", "214"), ("mail", "magenta"),
-            ("claude", "214"), ("codex", "green"), ("agy", "magenta"), ("gemini", "blue"), ("moderator", "cyan"),
+            ("claude", "214"), ("codex", "green"), ("agy", "magenta"), ("gemini", "blue"), ("opencode", "brightcyan"), ("moderator", "cyan"),
             ("bar_fg", "250"), ("bar_bg", "236"), ("bar_key", "245"),
         ],
         "mono" => &[
             ("accent", "white"), ("idle", "white"), ("working", "245"), ("attention", "brightwhite"), ("documenting", "245"), ("moderating", "245"),
             ("exited", "240"), ("starting", "240"), ("text", "white"), ("dim", "240"), ("border", "238"), ("selection", "white"), ("mail", "white"),
-            ("claude", "white"), ("codex", "250"), ("agy", "245"), ("gemini", "250"), ("moderator", "245"), ("bar_fg", "250"), ("bar_bg", "235"), ("bar_key", "245"),
+            ("claude", "white"), ("codex", "250"), ("agy", "245"), ("gemini", "250"), ("opencode", "250"), ("moderator", "245"), ("bar_fg", "250"), ("bar_bg", "235"), ("bar_key", "245"),
         ],
         "nord" => &[
             ("accent", "#88c0d0"), ("idle", "#a3be8c"), ("working", "#ebcb8b"), ("attention", "#bf616a"), ("documenting", "#b48ead"), ("moderating", "#81a1c1"),
             ("exited", "#4c566a"), ("starting", "#4c566a"), ("text", "#eceff4"), ("dim", "#616e88"), ("border", "#3b4252"), ("selection", "#88c0d0"), ("mail", "#b48ead"),
-            ("claude", "#d08770"), ("codex", "#a3be8c"), ("agy", "#b48ead"), ("gemini", "#81a1c1"), ("moderator", "#88c0d0"), ("bar_fg", "#d8dee9"), ("bar_bg", "#2e3440"), ("bar_key", "#616e88"),
+            ("claude", "#d08770"), ("codex", "#a3be8c"), ("agy", "#b48ead"), ("gemini", "#81a1c1"), ("opencode", "#8fbcbb"), ("moderator", "#88c0d0"), ("bar_fg", "#d8dee9"), ("bar_bg", "#2e3440"), ("bar_key", "#616e88"),
         ],
         "gruvbox" => &[
             ("accent", "#fabd2f"), ("idle", "#b8bb26"), ("working", "#fabd2f"), ("attention", "#fb4934"), ("documenting", "#d3869b"), ("moderating", "#83a598"),
             ("exited", "#665c54"), ("starting", "#665c54"), ("text", "#ebdbb2"), ("dim", "#928374"), ("border", "#3c3836"), ("selection", "#fabd2f"), ("mail", "#d3869b"),
-            ("claude", "#fe8019"), ("codex", "#b8bb26"), ("agy", "#d3869b"), ("gemini", "#83a598"), ("moderator", "#8ec07c"), ("bar_fg", "#ebdbb2"), ("bar_bg", "#282828"), ("bar_key", "#928374"),
+            ("claude", "#fe8019"), ("codex", "#b8bb26"), ("agy", "#d3869b"), ("gemini", "#83a598"), ("opencode", "#8ec07c"), ("moderator", "#8ec07c"), ("bar_fg", "#ebdbb2"), ("bar_bg", "#282828"), ("bar_key", "#928374"),
         ],
         "dracula" => &[
             ("accent", "#bd93f9"), ("idle", "#50fa7b"), ("working", "#f1fa8c"), ("attention", "#ff5555"), ("documenting", "#ff79c6"), ("moderating", "#8be9fd"),
             ("exited", "#6272a4"), ("starting", "#6272a4"), ("text", "#f8f8f2"), ("dim", "#6272a4"), ("border", "#44475a"), ("selection", "#bd93f9"), ("mail", "#ff79c6"),
-            ("claude", "#ffb86c"), ("codex", "#50fa7b"), ("agy", "#ff79c6"), ("gemini", "#8be9fd"), ("moderator", "#8be9fd"), ("bar_fg", "#f8f8f2"), ("bar_bg", "#282a36"), ("bar_key", "#6272a4"),
+            ("claude", "#ffb86c"), ("codex", "#50fa7b"), ("agy", "#ff79c6"), ("gemini", "#8be9fd"), ("opencode", "#50fa7b"), ("moderator", "#8be9fd"), ("bar_fg", "#f8f8f2"), ("bar_bg", "#282a36"), ("bar_key", "#6272a4"),
         ],
         _ => return None,
     };
@@ -228,6 +229,7 @@ pub fn load() -> Theme {
         codex: get("codex"),
         agy: get("agy"),
         gemini: get("gemini"),
+        opencode: get("opencode"),
         moderator: get("moderator"),
         bar_fg: get("bar_fg"),
         bar_bg: get("bar_bg"),
@@ -268,6 +270,7 @@ pub fn harness_color(p: &Palette, h: &str) -> Color {
         "codex" => p.codex,
         "agy" => p.agy,
         "gemini" => p.gemini,
+        "opencode" => p.opencode,
         "moderator" => p.moderator,
         _ => p.text,
     }
@@ -305,7 +308,7 @@ pub fn describe() -> String {
     let p = &t.palette;
     let mut out = vec![format!("themes: {}", list_themes().join(", ")), format!("active: {}", t.name), String::new()];
     out.push([("accent", p.accent), ("idle", p.idle), ("working", p.working), ("attention", p.attention), ("documenting", p.documenting), ("exited", p.exited)].iter().map(|(n, c)| format!("{} {n}", sw(*c))).collect::<Vec<_>>().join("   "));
-    out.push([("claude", p.claude), ("codex", p.codex), ("agy", p.agy), ("gemini", p.gemini), ("moderator", p.moderator)].iter().map(|(n, c)| format!("{} {n}", sw(*c))).collect::<Vec<_>>().join("   "));
+    out.push([("claude", p.claude), ("codex", p.codex), ("agy", p.agy), ("gemini", p.gemini), ("opencode", p.opencode), ("moderator", p.moderator)].iter().map(|(n, c)| format!("{} {n}", sw(*c))).collect::<Vec<_>>().join("   "));
     let g = &t.glyphs;
     out.push(format!("glyphs: idle {}  working {}  attention {}  documenting {}  exited {}", g.idle, g.working.join(""), g.attention, g.documenting, g.exited));
     out.join("\n")
