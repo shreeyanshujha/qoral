@@ -31,6 +31,8 @@ pub struct DebateOpts {
     pub timeout: Duration,
     pub build: bool,
     pub keep: bool,
+    /// Options mode: each participant develops a distinct candidate; the output is a comparison, not a verdict.
+    pub options: bool,
 }
 
 pub fn default_debaters(count: usize) -> Result<Vec<String>> {
@@ -66,12 +68,76 @@ struct Reply {
     consensus: bool,
 }
 
-fn parse_reply(body: &str) -> Reply {
-    let stance_re = regex::Regex::new(r"(?i)STANCE:\s*(.+)").unwrap();
+fn parse_reply(body: &str, options_mode: bool) -> Reply {
+    let stance_re = regex::Regex::new(if options_mode { r"(?i)OPTION:\s*(.+)" } else { r"(?i)STANCE:\s*(.+)" }).unwrap();
     let cons_re = regex::Regex::new(r"(?i)CONSENSUS:\s*(yes|no)").unwrap();
     let stance = stance_re.captures_iter(body).last().map(|c| c[1].trim().to_string());
-    let consensus = cons_re.captures_iter(body).last().map(|c| c[1].to_lowercase() == "yes").unwrap_or(false);
+    let consensus = !options_mode && cons_re.captures_iter(body).last().map(|c| c[1].to_lowercase() == "yes").unwrap_or(false);
     Reply { body: body.to_string(), stance, consensus }
+}
+
+fn debater_brief_options(name: &str, persona: &str, question: &str, cwd: &Path, participants: &[String], rounds: usize) -> String {
+    let others: Vec<&String> = participants.iter().filter(|p| p.as_str() != name).collect();
+    let others_s = others.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(" and ");
+    format!(
+        "You are \"{name}\", one of {n} participants ({all}) in an options exploration run by \"{mod_}\". The moderator is an automated process on the qoral bus, not a person: it only reads messages sent to it and relays candidates between participants. The goal is NOT to agree: the human wants a menu of distinct, well-developed options with honest tradeoffs, and will choose.\n\n\
+QUESTION: {question}\n\n\
+YOUR PERSPECTIVE: {persona} Develop the candidate approach that best fits this perspective.\n\n\
+Ground every claim in this project ({cwd}): read the relevant files first with your file-reading tools, and stay inside that directory (reading elsewhere, or running shell commands, may block on a permission prompt nobody is watching). Do NOT edit, create or delete any files.\n\n\
+PROTOCOL ({rounds} rounds max):\n\
+1. Investigate briefly, then send your candidate with qoral_send(to=\"{mod_}\"): at most 300 words. Describe the approach concretely (what changes, which files, rough effort), its main risks, and when it is the wrong choice. End the message with exactly these two lines:\n\
+   OPTION: <one-line name of your approach>\n\
+   TRADEOFFS: <one line: what you gain / what you give up>\n\
+2. Immediately call qoral_wait(timeout_seconds=600). The moderator will send you the other participants' candidates.\n\
+3. Each round: stress-test the candidates from {others_s} with concrete objections (what breaks, what it costs, what it assumes), answer the objections raised against yours, and refine your own candidate. Keep it distinct; only fold it into another candidate if yours is clearly dominated, and then say so explicitly. Reply to {mod_} ending with the same two lines.\n\
+4. After each reply call qoral_wait(timeout_seconds=600) again. Stop when the moderator says the exploration is over.\n\n\
+Rules: send everything to {mod_}, never to the other participants or to human directly. One message per round. Be concrete and honest about weaknesses; a menu of three real options is the deliverable, not a winner.",
+        n = participants.len(),
+        all = participants.join(", "),
+        mod_ = MODERATOR,
+        cwd = cwd.display(),
+    )
+}
+
+fn round_message_options(round: usize, rounds: usize, positions: &[(String, Reply)], me: &str) -> String {
+    let mut parts = vec![format!("Round {round} of {rounds}. Candidates from the other participants:")];
+    for (n, r) in positions.iter().filter(|(n, _)| n != me) {
+        parts.push(String::new());
+        parts.push(format!("--- {n} ---"));
+        parts.push(r.body.trim().to_string());
+    }
+    parts.push(String::new());
+    parts.push(format!("Respond now: stress-test these with concrete objections, answer objections to yours, refine your candidate, and reply to {MODERATOR} ending with your OPTION and TRADEOFFS lines. Then qoral_wait again."));
+    parts.join("\n")
+}
+
+fn synthesis_prompt_options(question: &str, cwd: &Path, _participants: &[String], options: &[(String, Option<String>)]) -> String {
+    format!(
+        "You are the moderator's scribe for an options exploration between AI coding agents working in the project at {cwd}. The human will choose; your job is a fair, concrete comparison, not a verdict.\n\n\
+QUESTION: {question}\n\n\
+Participants and their candidates:\n{opts}\n\n\
+After this prompt you will receive the CURRENT PROJECT KNOWLEDGE and the FULL TRANSCRIPT of the exploration.\n\n\
+Write one markdown document and nothing else, with exactly these sections:\n\
+# Options: <short title for the question>\n\
+**Question:** one line.\n\
+## Options\n\
+For each candidate, in the order given, a subsection:\n\
+### Option N: <name> (proposed by <participant>)\n\
+- **Approach:** what changes, which files, in 2–4 sentences.\n\
+- **Effort:** rough size (hours/days) and what makes it that size.\n\
+- **Gains:** what it buys.\n\
+- **Costs and risks:** what it gives up, what could break, what it assumes.\n\
+- **Objections raised:** the concrete objections the other participants made and whether they were answered.\n\
+- **Choose this if:** one line.\n\
+## Comparison\n\
+A markdown table with one row per option and columns: Option, Effort, Risk, Fits conventions, Reversible.\n\
+## Recommendation (optional)\n\
+Two or three sentences: which option you would pick and why, clearly marked as the scribe's opinion. If two options could be combined, say how.\n\
+## How to proceed\n\
+One line: `qoral build <this file> --option N` implements the chosen option.",
+        cwd = cwd.display(),
+        opts = options.iter().enumerate().map(|(i, (n, o))| format!("{}. {n}: {}", i + 1, o.clone().unwrap_or_else(|| "(no OPTION line)".into()))).collect::<Vec<_>>().join("\n"),
+    )
 }
 
 fn debater_brief(name: &str, persona: &str, question: &str, cwd: &Path, participants: &[String], rounds: usize) -> String {
@@ -133,6 +199,57 @@ Write one markdown document and nothing else, with exactly these sections:\n\
     )
 }
 
+pub fn builder_prompt(rel: &str, option: Option<usize>) -> String {
+    match option {
+        Some(n) => format!(
+            "Implement Option {n} from the options document {rel} (read it first: the option's approach, effort, risks and the objections raised, plus the comparison). Implement only that option. Follow the project's conventions, add or update tests, run the test suite, and when everything passes send the human a short report with qoral_send(to=\"human\") listing the files you changed. If the option turns out to be infeasible as described, stop and explain to human instead of improvising a different design."
+        ),
+        None => format!(
+            "Implement the decision recorded in {rel} (read it first, including the implementation plan). Follow the project's conventions, add or update tests as the plan says, run the test suite, and when everything passes send the human a short report with qoral_send(to=\"human\") listing the files you changed. If the plan turns out to be infeasible, stop and explain to human instead of improvising a different design."
+        ),
+    }
+}
+
+/// `qoral build <file> [--option N]`: spawn a builder for a decision or one option of an options document.
+pub async fn build(file: &Path, option: Option<usize>, harness: Option<String>, dir: Option<PathBuf>) -> Result<String> {
+    let file = if file.is_absolute() { file.to_path_buf() } else { std::env::current_dir()?.join(file) };
+    if !file.is_file() {
+        bail!("no such file: {}", file.display());
+    }
+    // project dir = parent of the `.qoral` directory the file lives in, unless given
+    let cwd = match dir {
+        Some(d) => d,
+        None => {
+            let mut p = file.parent();
+            let mut found = None;
+            while let Some(dir) = p {
+                if dir.file_name().map(|n| n == ".qoral").unwrap_or(false) {
+                    found = dir.parent().map(|x| x.to_path_buf());
+                    break;
+                }
+                p = dir.parent();
+            }
+            found.unwrap_or_else(|| file.parent().unwrap().to_path_buf())
+        }
+    };
+    let text = std::fs::read_to_string(&file)?;
+    let is_options = text.lines().take(12).any(|l| l.trim() == "mode: options") || text.contains("\n# Options:");
+    if is_options && option.is_none() {
+        let n = text.lines().filter(|l| l.starts_with("### Option ")).count();
+        bail!("{} is an options document with {n} options; pass --option N to pick one", file.display());
+    }
+    if let Some(n) = option {
+        if !text.contains(&format!("### Option {n}:")) && !text.contains(&format!("### Option {n} ")) {
+            bail!("no \"Option {n}\" heading in {}", file.display());
+        }
+    }
+    let rel = file.strip_prefix(&cwd).map(|p| p.display().to_string()).unwrap_or_else(|_| file.display().to_string());
+    let db = Db::open()?;
+    let bh = harness.unwrap_or_else(|| if knowledge::which("claude") { "claude".into() } else { default_debaters(1).map(|v| v[0].clone()).unwrap_or_else(|_| "claude".into()) });
+    let bname = if db.get_agent("builder")?.map(|a| a.exited_at.is_none()).unwrap_or(false) { format!("builder-{:x}", db::now_ms() % 4096) } else { "builder".to_string() };
+    spawn(SpawnReq { harness: bh, name: Some(bname), cwd: Some(cwd.display().to_string()), prompt: Some(builder_prompt(&rel, option)), focus: true, command: None }).await
+}
+
 async fn spawn(req: SpawnReq) -> Result<String> {
     match ctl::request(ClientMsg::Spawn(req), true).await? {
         DaemonMsg::Spawned { name, .. } => Ok(name),
@@ -184,13 +301,18 @@ pub async fn run(opts: DebateOpts, log: &dyn Fn(&str)) -> Result<()> {
     let mut transcript: Vec<(usize, String, String)> = Vec::new();
     let mut last_id = db.recent_messages(1)?.first().map(|m| m.id).unwrap_or(0);
 
-    log(&format!("debate: {question}"));
+    let options_mode = opts.options;
+    log(&format!("{}: {question}", if options_mode { "options" } else { "debate" }));
     log(&format!("project: {}", cwd.display()));
     log(&format!("participants: {} · {} rounds max · {}s per round", names.iter().zip(&harnesses).map(|(n, h)| format!("{n} ({h})")).collect::<Vec<_>>().join(", "), opts.rounds, opts.timeout.as_secs()));
 
     let result: Result<PathBuf> = async {
         for (i, h) in harnesses.iter().enumerate() {
-            let brief = debater_brief(&names[i], PERSONAS[i].brief, &question, &cwd, &names, opts.rounds);
+            let brief = if options_mode {
+                debater_brief_options(&names[i], PERSONAS[i].brief, &question, &cwd, &names, opts.rounds)
+            } else {
+                debater_brief(&names[i], PERSONAS[i].brief, &question, &cwd, &names, opts.rounds)
+            };
             let n = spawn(SpawnReq { harness: h.clone(), name: Some(names[i].clone()), cwd: Some(cwd.display().to_string()), prompt: Some(brief), focus: false, command: None }).await?;
             spawned.push(n.clone());
             log(&format!("{} spawned {n} ({h})", el()));
@@ -208,7 +330,8 @@ pub async fn run(opts: DebateOpts, log: &dyn Fn(&str)) -> Result<()> {
                     if !positions.iter().any(|(p, _)| p == n) && round > 2 {
                         continue;
                     }
-                    db.add_message(MODERATOR, n, &round_message(round, opts.rounds, &positions, n))?;
+                    let msg = if options_mode { round_message_options(round, opts.rounds, &positions, n) } else { round_message(round, opts.rounds, &positions, n) };
+                    db.add_message(MODERATOR, n, &msg)?;
                 }
                 log(&format!("{} round {round}: positions relayed, waiting for replies…", el()));
             } else {
@@ -224,8 +347,9 @@ pub async fn run(opts: DebateOpts, log: &dyn Fn(&str)) -> Result<()> {
                         continue;
                     }
                     db.mark_read(&[m.id])?;
-                    let r = parse_reply(&m.body);
-                    log(&format!("{} round {round}: {} → {}{}", el(), m.sender, r.stance.as_deref().map(|s| format!("STANCE: {s}")).unwrap_or_else(|| "(no stance line)".into()), if r.consensus { "  [consensus: yes]" } else { "" }));
+                    let r = parse_reply(&m.body, options_mode);
+                    let label = if options_mode { "OPTION" } else { "STANCE" };
+                    log(&format!("{} round {round}: {} → {}{}", el(), m.sender, r.stance.as_deref().map(|s| format!("{label}: {s}")).unwrap_or_else(|| format!("(no {label} line)")), if r.consensus { "  [consensus: yes]" } else { "" }));
                     transcript.push((round, m.sender.clone(), m.body.clone()));
                     if let Some(slot) = got.iter_mut().find(|(n, _)| *n == m.sender) {
                         if r.stance.is_some() || slot.1.stance.is_none() {
@@ -265,7 +389,7 @@ pub async fn run(opts: DebateOpts, log: &dyn Fn(&str)) -> Result<()> {
                     positions.push((n.clone(), Reply { body: r.body.clone(), stance: r.stance.clone(), consensus: r.consensus }));
                 }
             }
-            if got.len() >= 2 && got.len() == names.len() && got.iter().all(|(_, r)| r.consensus) {
+            if !options_mode && got.len() >= 2 && got.len() == names.len() && got.iter().all(|(_, r)| r.consensus) {
                 consensus = true;
                 log(&format!("{} consensus reached after {round} round(s)", el()));
                 break;
@@ -276,20 +400,21 @@ pub async fn run(opts: DebateOpts, log: &dyn Fn(&str)) -> Result<()> {
             }
         }
         for n in &names {
-            db.add_message(MODERATOR, n, "The debate is over. Thank you. Do not send further messages; stop and wait.")?;
+            db.add_message(MODERATOR, n, if options_mode { "The exploration is over. Thank you. Do not send further messages; stop and wait." } else { "The debate is over. Thank you. Do not send further messages; stop and wait." })?;
         }
 
         // synthesis
         let stances: Vec<(String, Option<String>)> = names.iter().map(|n| (n.clone(), positions.iter().find(|(p, _)| p == n).and_then(|(_, r)| r.stance.clone()))).collect();
         let dec_dir = knowledge::knowledge_dir(&cwd).join("decisions");
         std::fs::create_dir_all(&dec_dir)?;
-        let path = dec_dir.join(format!("{}-{}.md", knowledge::stamp_now(), slugify(&question)));
+        let path = dec_dir.join(format!("{}-{}{}.md", knowledge::stamp_now(), if options_mode { "options-" } else { "" }, slugify(&question)));
         let debate_text = transcript.iter().map(|(r, f, b)| format!("### round {r} — {f}\n{}", b.trim())).collect::<Vec<_>>().join("\n\n");
         let mut body: Option<String> = None;
         if let Some(sum) = knowledge::pick_summarizer() {
-            log(&format!("{} writing decision document with {sum}…", el()));
-            let input = format!("CURRENT PROJECT KNOWLEDGE:\n{}\n\nFULL DEBATE TRANSCRIPT:\n{debate_text}", { let k = knowledge::read_knowledge(&cwd); if k.trim().is_empty() { "(empty)".to_string() } else { k } });
-            match knowledge::run_summarizer(&synthesis_prompt(&question, &cwd, consensus, &names, &stances), &input, &cwd, &sum) {
+            log(&format!("{} writing {} document with {sum}…", el(), if options_mode { "options" } else { "decision" }));
+            let input = format!("CURRENT PROJECT KNOWLEDGE:\n{}\n\nFULL TRANSCRIPT:\n{debate_text}", { let k = knowledge::read_knowledge(&cwd); if k.trim().is_empty() { "(empty)".to_string() } else { k } });
+            let prompt = if options_mode { synthesis_prompt_options(&question, &cwd, &names, &stances) } else { synthesis_prompt(&question, &cwd, consensus, &names, &stances) };
+            match knowledge::run_summarizer(&prompt, &input, &cwd, &sum) {
                 Ok(out) => {
                     let t = out.trim().trim_start_matches("```markdown").trim_start_matches("```md").trim_start_matches("```").trim_end_matches("```").trim().to_string();
                     body = Some(t);
@@ -298,33 +423,52 @@ pub async fn run(opts: DebateOpts, log: &dyn Fn(&str)) -> Result<()> {
             }
         }
         let body = body.unwrap_or_else(|| {
-            format!(
-                "# Decision: {question}\n\n**Question:** {question}\n\n**Outcome:** {}\n\n## Final stances\n{}\n",
-                if consensus { "consensus" } else { "no consensus" },
-                stances.iter().map(|(n, s)| format!("- **{n}**: {}", s.clone().unwrap_or_else(|| "(none)".into()))).collect::<Vec<_>>().join("\n")
-            )
+            if options_mode {
+                format!(
+                    "# Options: {question}\n\n**Question:** {question}\n\n## Options\n{}\n",
+                    stances.iter().enumerate().map(|(i, (n, s))| format!("### Option {}: {} (proposed by {n})", i + 1, s.clone().unwrap_or_else(|| "(none)".into()))).collect::<Vec<_>>().join("\n\n")
+                )
+            } else {
+                format!(
+                    "# Decision: {question}\n\n**Question:** {question}\n\n**Outcome:** {}\n\n## Final stances\n{}\n",
+                    if consensus { "consensus" } else { "no consensus" },
+                    stances.iter().map(|(n, s)| format!("- **{n}**: {}", s.clone().unwrap_or_else(|| "(none)".into()))).collect::<Vec<_>>().join("\n")
+                )
+            }
         });
         let header = format!(
-            "---\nquestion: {}\nparticipants: {}\nharnesses: {}\nrounds: {rounds_run}\nconsensus: {consensus}\ndate: {}\n---\n\n",
+            "---\nmode: {}\nquestion: {}\nparticipants: {}\nharnesses: {}\nrounds: {rounds_run}\nconsensus: {consensus}\ndate: {}\n---\n\n",
+            if options_mode { "options" } else { "decision" },
             serde_json::to_string(&question)?,
             names.join(", "),
             harnesses.join(", "),
             chrono::Local::now().to_rfc3339()
         );
-        std::fs::write(&path, format!("{header}{}\n\n---\n\n## Debate transcript\n\n{debate_text}\n", body.trim()))?;
-        let title = body.lines().find_map(|l| l.strip_prefix("# Decision:")).map(|s| s.trim().to_string()).unwrap_or_else(|| question.clone());
+        std::fs::write(&path, format!("{header}{}\n\n---\n\n## Transcript\n\n{debate_text}\n", body.trim()))?;
+        let title = body
+            .lines()
+            .find_map(|l| l.strip_prefix("# Decision:").or_else(|| l.strip_prefix("# Options:")))
+            .map(|s| s.trim().to_string())
+            .unwrap_or_else(|| question.clone());
         let rel = path.strip_prefix(&cwd).map(|p| p.display().to_string()).unwrap_or_else(|_| path.display().to_string());
-        knowledge::append_decision(&cwd, &format!("- ({}, debate{}) {title} — see {rel}", chrono::Local::now().format("%Y-%m-%d"), if consensus { "" } else { ", no consensus" }))?;
-        log(&format!("{} decision: {}", el(), path.display()));
-        db.add_message(MODERATOR, "human", &format!("DECISION{}: {title}. Full write-up: {rel}", if consensus { "" } else { " (no consensus; recommendation)" }))?;
+        let n_opts = stances.iter().filter(|(_, s)| s.is_some()).count();
+        if options_mode {
+            knowledge::append_decision(&cwd, &format!("- ({}, options, undecided) {title} — {n_opts} options in {rel}; pick with `qoral build {rel} --option N`", chrono::Local::now().format("%Y-%m-%d")))?;
+            log(&format!("{} options: {}", el(), path.display()));
+            db.add_message(MODERATOR, "human", &format!("OPTIONS: {title} — {n_opts} candidates written up in {rel}. Read it, then `qoral build {rel} --option N` to implement your pick."))?;
+        } else {
+            knowledge::append_decision(&cwd, &format!("- ({}, debate{}) {title} — see {rel}", chrono::Local::now().format("%Y-%m-%d"), if consensus { "" } else { ", no consensus" }))?;
+            log(&format!("{} decision: {}", el(), path.display()));
+            db.add_message(MODERATOR, "human", &format!("DECISION{}: {title}. Full write-up: {rel}", if consensus { "" } else { " (no consensus; recommendation)" }))?;
+        }
 
-        if opts.build {
+        if opts.build && options_mode {
+            log(&format!("{} --build is ignored in options mode: choose first, then `qoral build {rel} --option N`", el()));
+        }
+        if opts.build && !options_mode {
             let bh = if harnesses.iter().any(|h| h == "claude") { "claude".to_string() } else { harnesses[0].clone() };
             let bname = if db.get_agent("builder")?.map(|a| a.exited_at.is_none()).unwrap_or(false) { format!("builder-{:x}", db::now_ms() % 4096) } else { "builder".to_string() };
-            let prompt = format!(
-                "Implement the decision recorded in {rel} (read it first, including the implementation plan). Follow the project's conventions, add or update tests as the plan says, run the test suite, and when everything passes send the human a short report with qoral_send(to=\"human\") listing the files you changed. If the plan turns out to be infeasible, stop and explain to human instead of improvising a different design."
-            );
-            let n = spawn(SpawnReq { harness: bh.clone(), name: Some(bname), cwd: Some(cwd.display().to_string()), prompt: Some(prompt), focus: true, command: None }).await?;
+            let n = spawn(SpawnReq { harness: bh.clone(), name: Some(bname), cwd: Some(cwd.display().to_string()), prompt: Some(builder_prompt(&rel, None)), focus: true, command: None }).await?;
             log(&format!("{} builder {n} ({bh}) started", el()));
         }
         log("");

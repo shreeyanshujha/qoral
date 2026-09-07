@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- `qoral debate --options`: participants develop distinct candidates instead of converging; the write-up is a per-option comparison with an optional recommendation, linked from KNOWLEDGE.md as undecided and announced on the bus as `OPTIONS:`.
+- `qoral build <decisions-file> [--option N]`: spawn a builder for a decision document or for one option of an options document.
+- The sidebar's `D` wizard asks for "decide" or "options".
+
 ## [0.3.0] - 2026-09-06
 
 Rewritten in Rust. qoral is now a single binary that is its own multiplexer; tmux and Node are no longer needed.

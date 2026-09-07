@@ -136,6 +136,23 @@ enum Cmd {
         /// Leave participants running afterwards
         #[arg(long)]
         keep: bool,
+        /// Options mode: each participant develops a distinct candidate; you get a comparison, then choose with `qoral build`
+        #[arg(long)]
+        options: bool,
+    },
+    /// Spawn a builder to implement a decision document, or one option of an options document
+    Build {
+        /// Path to the .qoral/decisions/*.md file
+        file: String,
+        /// Which option to implement (required for options documents)
+        #[arg(long)]
+        option: Option<usize>,
+        /// Harness for the builder (default: claude if available)
+        #[arg(long)]
+        harness: Option<String>,
+        /// Project directory (default: the project the document belongs to)
+        #[arg(long)]
+        dir: Option<String>,
     },
 }
 
@@ -340,7 +357,7 @@ async fn async_main(cli: Cli) -> Result<()> {
             }
             other => bail!("unknown theme action \"{other}\" (list | init <name> [--from <builtin>] [--force])"),
         },
-        Some(Cmd::Debate { question, dir, agents, rounds, timeout, build, keep }) => {
+        Some(Cmd::Debate { question, dir, agents, rounds, timeout, build, keep, options }) => {
             let opts = debate::DebateOpts {
                 question,
                 cwd: dir.map(|d| paths::expand_home(&d)).unwrap_or(std::env::current_dir()?),
@@ -349,8 +366,14 @@ async fn async_main(cli: Cli) -> Result<()> {
                 timeout: std::time::Duration::from_secs(timeout.max(10)),
                 build,
                 keep,
+                options,
             };
             debate::run(opts, &|m| println!("{m}")).await
+        }
+        Some(Cmd::Build { file, option, harness, dir }) => {
+            let name = debate::build(&paths::expand_home(&file), option, harness, dir.map(|d| paths::expand_home(&d))).await?;
+            println!("builder {name} started; it reports to you on the bus when done (qoral log)");
+            Ok(())
         }
         Some(Cmd::Mcp { .. }) => unreachable!(),
     }

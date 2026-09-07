@@ -37,6 +37,7 @@ pub enum Pending {
     QuitAll,
     DebateQuestion,
     DebateDir { question: String },
+    DebateMode { question: String, dir: String },
     DebateBuild { question: String, dir: String },
 }
 
@@ -219,9 +220,9 @@ impl App {
             Pending::DebateDir { question } => {
                 let dir = if v.is_empty() { self.project_dir().display().to_string() } else { v };
                 self.mode = Mode::Pick {
-                    label: "build the decision afterwards?".into(),
-                    options: vec![('y', "yes, spawn a builder".into()), ('n', "no, decide only".into())],
-                    pending: Pending::DebateBuild { question, dir },
+                    label: "outcome?".into(),
+                    options: vec![('d', "decide (converge on one)".into()), ('o', "options (menu, you choose)".into())],
+                    pending: Pending::DebateMode { question, dir },
                 };
             }
             Pending::Message { to } => {
@@ -384,6 +385,22 @@ impl App {
                             let taken: Vec<String> = self.agents.iter().map(|a| a.name.clone()).collect();
                             let def = crate::harness::suggest_name(&taken);
                             self.mode = Mode::Input { label: "name".into(), value: String::new(), placeholder: def, pending: Pending::SpawnName { harness: picked } };
+                        }
+                        Pending::DebateMode { question, dir } => {
+                            if c == 'o' {
+                                let cwd = crate::paths::expand_home(&dir);
+                                self.last_dir = cwd.clone();
+                                let script = format!("{} debate {} --dir {} --options", shq(&self_exe()), shq(&question), shq(&cwd.display().to_string()));
+                                let name = format!("options-{:x}", db::now_ms() % 4096);
+                                self.open_window(&name, &cwd, script);
+                                self.flash("options exploration started · moderator output on the right", 5000);
+                            } else {
+                                self.mode = Mode::Pick {
+                                    label: "build the decision afterwards?".into(),
+                                    options: vec![('y', "yes, spawn a builder".into()), ('n', "no, decide only".into())],
+                                    pending: Pending::DebateBuild { question, dir },
+                                };
+                            }
                         }
                         Pending::DebateBuild { question, dir } => {
                             let build = c == 'y';

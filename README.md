@@ -134,6 +134,20 @@ qoral spawns three participants with different perspectives (a pragmatist, a ske
 
 Flags: `--agents claude,agy,codex` (2 to 4, repeats allowed), `--rounds 3`, `--timeout 300` seconds per round, `--keep` to leave participants running. From the sidebar, `D` runs a debate in its own window so you can watch the moderator's log. Participants stuck on a permission prompt are flagged in the log and on the bus.
 
+### Options mode: a menu instead of a verdict
+
+```sh
+qoral debate "How should we add caching to the API?" --dir ~/proj --options --rounds 2
+```
+
+With `--options`, participants don't try to agree. Each develops a distinct candidate from its perspective, stress-tests the others' candidates for a round, and the write-up is a comparison: per option its approach, effort, gains, costs and risks, the objections raised and whether they were answered, and "choose this if"; then a comparison table and a clearly labelled optional recommendation. It lands in `.qoral/decisions/<date>-options-<slug>.md`, is linked from `KNOWLEDGE.md` as undecided, and arrives on your bus as `OPTIONS: …`. You choose:
+
+```sh
+qoral build .qoral/decisions/2026-09-07-1010-options-how-should-we-add-caching.md --option 2
+```
+
+`qoral build` spawns a builder for that option (or for a decision document without `--option`), which implements it, runs the tests and reports to you. In the sidebar, `D` asks whether you want a decision or options.
+
 ## Living documentation
 
 Every session leaves knowledge behind, per project, in a `.qoral/` folder inside the project directory:
