@@ -132,7 +132,7 @@ qoral spawns three participants with different perspectives (a pragmatist, a ske
 4. A headless model writes a decision document to `.qoral/decisions/<date>-<slug>.md`: decision or recommendation, rationale, alternatives considered, dissent and risks, a numbered implementation plan, and the full transcript. A one-line link is added under `## Decisions` in `KNOWLEDGE.md`, so every future agent inherits the outcome.
 5. With `--build`, a builder agent implements the plan, runs the tests, and reports to you.
 
-Flags: `--agents claude,agy,codex` (2 to 4, repeats allowed), `--rounds 3`, `--timeout 300` seconds per round, `--keep` to leave participants running. From the sidebar, `D` runs a debate in its own window so you can watch the moderator's log. Participants stuck on a permission prompt are flagged in the log and on the bus.
+Flags: `--count 2` (or `-n 2`) for the number of participants, drawn from the usable harnesses (installed, and signed in where qoral can tell; Codex without `~/.codex/auth.json` is skipped); `--agents claude,agy,claude` to pick them explicitly (2 to 4, repeats allowed); `--rounds 3`; `--timeout 300` seconds per round; `--keep` to leave participants running. Pin the default pool and size in the config with `"debate_harnesses": ["claude", "agy"]` and `"debate_count": 2`. From the sidebar, `D` runs a debate in its own window so you can watch the moderator's log. Participants stuck on a permission prompt are flagged in the log and on the bus.
 
 ### Options mode: a menu instead of a verdict
 
@@ -167,7 +167,8 @@ Every session leaves knowledge behind, per project, in a `.qoral/` folder inside
 **Summarizer.** Defaults to the first of `claude`, `codex`, `gemini`, `agy` on PATH, run headless with no tools and a plain writer system prompt. Configure in `~/.local/share/qoral/config.json`:
 
 ```json
-{ "summarizer": "auto", "model": null, "document_sessions": true, "max_agents": 8, "theme": "default" }
+{ "summarizer": "auto", "model": null, "document_sessions": true, "max_agents": 8, "theme": "default",
+  "debate_harnesses": [], "debate_count": 3 }
 ```
 
 `summarizer` accepts `auto`, `claude`, `codex`, `gemini`, `agy`, or `none`. Env overrides: `QORAL_SUMMARIZER`, `QORAL_SUMMARIZER_MODEL`. Commit `.qoral/` to share the knowledge with your team, or add it to `.gitignore` to keep it local.

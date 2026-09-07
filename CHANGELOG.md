@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- `qoral debate --count N` (`-n`) chooses how many participants (2–4) without naming harnesses; the `D` wizard asks for participants (a number or a harness list).
+- Config `debate_harnesses` (harness pool) and `debate_count` (default size).
+
+### Changed
+- Default debate participants are drawn from *usable* harnesses: Codex is skipped when `~/.codex/auth.json` is missing, so an unsigned Codex no longer eats a seat and stalls a round.
+
 ## [0.3.1] - 2026-09-07
 
 ### Added

@@ -122,9 +122,12 @@ enum Cmd {
         question: String,
         #[arg(long)]
         dir: Option<String>,
-        /// Comma-separated harnesses for the participants (2-4), e.g. claude,agy,codex
+        /// Comma-separated harnesses for the participants (2-4), e.g. claude,agy,claude
         #[arg(long)]
         agents: Option<String>,
+        /// Number of participants (2-4) drawn from the usable harnesses; ignored when --agents is given
+        #[arg(long, short = 'n')]
+        count: Option<usize>,
         #[arg(long, default_value_t = 3)]
         rounds: usize,
         /// Seconds to wait per round
@@ -357,7 +360,7 @@ async fn async_main(cli: Cli) -> Result<()> {
             }
             other => bail!("unknown theme action \"{other}\" (list | init <name> [--from <builtin>] [--force])"),
         },
-        Some(Cmd::Debate { question, dir, agents, rounds, timeout, build, keep, options }) => {
+        Some(Cmd::Debate { question, dir, agents, count, rounds, timeout, build, keep, options }) => {
             let opts = debate::DebateOpts {
                 question,
                 cwd: dir.map(|d| paths::expand_home(&d)).unwrap_or(std::env::current_dir()?),
@@ -367,6 +370,7 @@ async fn async_main(cli: Cli) -> Result<()> {
                 build,
                 keep,
                 options,
+                count,
             };
             debate::run(opts, &|m| println!("{m}")).await
         }

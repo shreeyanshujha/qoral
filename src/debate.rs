@@ -33,14 +33,40 @@ pub struct DebateOpts {
     pub keep: bool,
     /// Options mode: each participant develops a distinct candidate; the output is a comparison, not a verdict.
     pub options: bool,
+    /// Number of participants when `harnesses` is empty (2–4). None = config default.
+    pub count: Option<usize>,
+}
+
+/// Is this harness worth putting in a debate by default? Installed, and (where we can tell) signed in.
+pub fn harness_usable(h: &str) -> bool {
+    if !knowledge::which(h) {
+        return false;
+    }
+    let home = dirs::home_dir().unwrap_or_default();
+    match h {
+        // Codex without auth.json sits at its sign-in screen forever.
+        "codex" => home.join(".codex/auth.json").exists(),
+        _ => true,
+    }
+}
+
+/// The pool of harnesses debates draw from: config `debate_harnesses` if set, else every usable CLI.
+pub fn harness_pool() -> Result<Vec<String>> {
+    let cfg = crate::config::load();
+    let pool: Vec<String> = if !cfg.debate_harnesses.is_empty() {
+        cfg.debate_harnesses.iter().filter(|h| knowledge::which(h)).cloned().collect()
+    } else {
+        ["claude", "agy", "gemini", "codex"].into_iter().filter(|h| harness_usable(h)).map(|s| s.to_string()).collect()
+    };
+    if pool.is_empty() {
+        bail!("no usable agent CLIs found (install claude/agy/gemini/codex, or set debate_harnesses in config.json)");
+    }
+    Ok(pool)
 }
 
 pub fn default_debaters(count: usize) -> Result<Vec<String>> {
-    let avail: Vec<&str> = ["claude", "agy", "codex", "gemini"].into_iter().filter(|h| knowledge::which(h)).collect();
-    if avail.is_empty() {
-        bail!("no agent CLIs found on PATH");
-    }
-    Ok((0..count).map(|i| avail[i % avail.len()].to_string()).collect())
+    let pool = harness_pool()?;
+    Ok((0..count).map(|i| pool[i % pool.len()].clone()).collect())
 }
 
 fn slugify(s: &str) -> String {
@@ -268,7 +294,11 @@ pub async fn run(opts: DebateOpts, log: &dyn Fn(&str)) -> Result<()> {
         bail!("a question is required");
     }
     let cwd = if opts.cwd.is_absolute() { opts.cwd.clone() } else { std::env::current_dir()?.join(&opts.cwd) };
-    let harnesses = if opts.harnesses.is_empty() { default_debaters(3)? } else { opts.harnesses.clone() };
+    let count = opts.count.unwrap_or_else(|| crate::config::load().debate_count);
+    if opts.harnesses.is_empty() && !(2..=PERSONAS.len()).contains(&count) {
+        bail!("--count must be between 2 and {}", PERSONAS.len());
+    }
+    let harnesses = if opts.harnesses.is_empty() { default_debaters(count)? } else { opts.harnesses.clone() };
     if harnesses.len() < 2 {
         bail!("a debate needs at least two participants");
     }

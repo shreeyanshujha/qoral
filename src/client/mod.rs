@@ -19,6 +19,18 @@ use crate::theme::{self, Theme};
 
 pub const SIDEBAR_W: u16 = 38;
 
+/// "3" → " --count 3"; "claude,agy" → " --agents claude,agy"; "" → "".
+fn who_flag(who: &str) -> String {
+    let w = who.trim();
+    if w.is_empty() {
+        String::new()
+    } else if w.chars().all(|c| c.is_ascii_digit()) {
+        format!(" --count {w}")
+    } else {
+        format!(" --agents {}", shq(&w.split([',', ' ']).filter(|s| !s.is_empty()).collect::<Vec<_>>().join(",")))
+    }
+}
+
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub enum Focus {
     Sidebar,
@@ -37,8 +49,9 @@ pub enum Pending {
     QuitAll,
     DebateQuestion,
     DebateDir { question: String },
-    DebateMode { question: String, dir: String },
-    DebateBuild { question: String, dir: String },
+    DebateWho { question: String, dir: String },
+    DebateMode { question: String, dir: String, who: String },
+    DebateBuild { question: String, dir: String, who: String },
 }
 
 pub enum Mode {
@@ -219,10 +232,19 @@ impl App {
             }
             Pending::DebateDir { question } => {
                 let dir = if v.is_empty() { self.project_dir().display().to_string() } else { v };
+                let pool = crate::debate::harness_pool().map(|p| p.join(",")).unwrap_or_else(|_| "none found".into());
+                self.mode = Mode::Input {
+                    label: "participants".into(),
+                    value: String::new(),
+                    placeholder: format!("3  (a number 2-4, or e.g. claude,agy,claude · pool: {pool})"),
+                    pending: Pending::DebateWho { question, dir },
+                };
+            }
+            Pending::DebateWho { question, dir } => {
                 self.mode = Mode::Pick {
                     label: "outcome?".into(),
                     options: vec![('d', "decide (converge on one)".into()), ('o', "options (menu, you choose)".into())],
-                    pending: Pending::DebateMode { question, dir },
+                    pending: Pending::DebateMode { question, dir, who: v },
                 };
             }
             Pending::Message { to } => {
@@ -386,11 +408,11 @@ impl App {
                             let def = crate::harness::suggest_name(&taken);
                             self.mode = Mode::Input { label: "name".into(), value: String::new(), placeholder: def, pending: Pending::SpawnName { harness: picked } };
                         }
-                        Pending::DebateMode { question, dir } => {
+                        Pending::DebateMode { question, dir, who } => {
                             if c == 'o' {
                                 let cwd = crate::paths::expand_home(&dir);
                                 self.last_dir = cwd.clone();
-                                let script = format!("{} debate {} --dir {} --options", shq(&self_exe()), shq(&question), shq(&cwd.display().to_string()));
+                                let script = format!("{} debate {} --dir {}{} --options", shq(&self_exe()), shq(&question), shq(&cwd.display().to_string()), who_flag(&who));
                                 let name = format!("options-{:x}", db::now_ms() % 4096);
                                 self.open_window(&name, &cwd, script);
                                 self.flash("options exploration started · moderator output on the right", 5000);
@@ -398,15 +420,15 @@ impl App {
                                 self.mode = Mode::Pick {
                                     label: "build the decision afterwards?".into(),
                                     options: vec![('y', "yes, spawn a builder".into()), ('n', "no, decide only".into())],
-                                    pending: Pending::DebateBuild { question, dir },
+                                    pending: Pending::DebateBuild { question, dir, who },
                                 };
                             }
                         }
-                        Pending::DebateBuild { question, dir } => {
+                        Pending::DebateBuild { question, dir, who } => {
                             let build = c == 'y';
                             let cwd = crate::paths::expand_home(&dir);
                             self.last_dir = cwd.clone();
-                            let script = format!("{} debate {} --dir {}{}", shq(&self_exe()), shq(&question), shq(&cwd.display().to_string()), if build { " --build" } else { "" });
+                            let script = format!("{} debate {} --dir {}{}{}", shq(&self_exe()), shq(&question), shq(&cwd.display().to_string()), who_flag(&who), if build { " --build" } else { "" });
                             let name = format!("debate-{:x}", db::now_ms() % 4096);
                             self.open_window(&name, &cwd, script);
                             self.flash("debate started · moderator output on the right", 5000);

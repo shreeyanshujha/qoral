@@ -11,11 +11,15 @@ pub struct Config {
     pub document_sessions: bool,
     pub max_agents: usize,
     pub theme: String,
+    /// Harness pool for debates when --agents isn't given, e.g. ["claude", "agy"]. Empty = auto-detect.
+    pub debate_harnesses: Vec<String>,
+    /// Default number of debate participants when neither --count nor --agents is given.
+    pub debate_count: usize,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Self { summarizer: "auto".into(), model: None, document_sessions: true, max_agents: 8, theme: "default".into() }
+        Self { summarizer: "auto".into(), model: None, document_sessions: true, max_agents: 8, theme: "default".into(), debate_harnesses: vec![], debate_count: 3 }
     }
 }
 
