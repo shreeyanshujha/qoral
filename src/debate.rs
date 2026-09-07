@@ -44,8 +44,9 @@ pub fn harness_usable(h: &str) -> bool {
     }
     let home = dirs::home_dir().unwrap_or_default();
     match h {
-        // Codex without auth.json sits at its sign-in screen forever.
-        "codex" => home.join(".codex/auth.json").exists(),
+        // Codex without credentials sits at its sign-in screen forever. Signed in via ChatGPT (auth.json)
+        // or via an API key in the environment both count.
+        "codex" => home.join(".codex/auth.json").exists() || std::env::var("OPENAI_API_KEY").map(|v| !v.is_empty()).unwrap_or(false),
         _ => true,
     }
 }
